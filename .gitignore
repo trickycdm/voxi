@@ -1,0 +1,10 @@
+.DS_Store
+build/
+DerivedData/
+*.xcodeproj
+!project.yml
+.swiftpm/
+*.xcuserstate
+xcuserdata/
+Tests/Fixtures/audio/*.wav
+.claude/settings.local.json

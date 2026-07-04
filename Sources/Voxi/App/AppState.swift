@@ -113,14 +113,18 @@ final class AppState {
         capture.onLevel = { [pill] level in
             pill.level = level
         }
-        // The pill's ✕/✓ mirror Esc and chord-release respectively.
+        // The pill's ✕/✓ mirror Esc and chord-release respectively. Ending a
+        // session from the mouse leaves the keyboard-side chord state (e.g. a
+        // toggle latch) dangling — reset it so Esc isn't swallowed afterwards.
         pill.onCancel = { [weak self] in
             guard let self, let coordinator = self.coordinator else { return }
             coordinator.handle(.cancel, hotkeys: self.hotkeys)
+            self.hotkeys.resetChordState()
         }
         pill.onDone = { [weak self] in
             guard let self, let coordinator = self.coordinator else { return }
             coordinator.handle(.actionEnded(.pushToTalk), hotkeys: self.hotkeys)
+            self.hotkeys.resetChordState()
         }
     }
 }

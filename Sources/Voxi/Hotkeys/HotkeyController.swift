@@ -90,6 +90,13 @@ final class HotkeyController {
         permissionStatus = .unknown
     }
 
+    /// Ends any keyboard-side session state (active hold or toggle latch).
+    /// Call when a session is finished/cancelled from the UI rather than the
+    /// keyboard, so a stale toggle latch doesn't keep swallowing Esc.
+    func resetChordState() {
+        tap.resetChordState()
+    }
+
     /// Shows the system Accessibility prompt (once per TCC lifetime).
     func requestAccessibility() {
         // kAXTrustedCheckOptionPrompt is imported as a mutable global (not

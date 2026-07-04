@@ -111,9 +111,10 @@ actor WhisperKitEngine: ASREngine {
         )
         do {
             let results = try await pipe.transcribe(audioArray: samples, decodeOptions: options)
-            return results.map(\.text)
+            let joined = results.map(\.text)
                 .joined(separator: " ")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
+            return WhisperAnnotationFilter.strip(joined)
         } catch {
             throw ASREngineError.transcriptionFailed(String(describing: error))
         }

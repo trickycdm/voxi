@@ -41,6 +41,13 @@ final class ModifierChordTap {
         set { machine.externalSessionActive = newValue }
     }
 
+    /// Clears transient chord state (holds, toggle latch). Needed when a
+    /// session is ended from outside the keyboard (pill buttons) so a stale
+    /// latch doesn't keep swallowing Esc.
+    func resetChordState() {
+        machine.reset()
+    }
+
     /// Creates and enables the tap. Returns false (status .creationFailed) when
     /// the process is not Accessibility-trusted. Safe to call repeatedly.
     @discardableResult

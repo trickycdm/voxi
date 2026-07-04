@@ -5,7 +5,8 @@ import os
 let voxiLog = Logger(subsystem: "com.colin.voxi", category: "app")
 
 /// Central coordinator. Owns the module controllers and routes events between
-/// them (hotkey → capture → transcription → refinement → insertion/queue).
+/// them (hotkey → capture → transcription → refinement → insertion/queue),
+/// and fans state out to the pill and queue UI.
 @MainActor
 @Observable
 final class AppState {
@@ -18,12 +19,15 @@ final class AppState {
     let capture = AudioCapture()
     let inserter = TextInserter()
     let hotkeys = HotkeyController()
+    let pill = PillController()
 
     private(set) var coordinator: DictationCoordinator?
+    private(set) var queueModel: QueueModel?
+    private(set) var queueRunner: QueueRunner?
+    private(set) var queueWindow: QueueWindowController?
+
     private var eventTask: Task<Void, Never>?
 
-    /// Latest pill-facing state; the pill controller (shell) observes this
-    /// through the coordinator hook once wired.
     private(set) var lastError: String?
 
     func start() {
@@ -48,11 +52,22 @@ final class AppState {
             )
             self.coordinator = coordinator
 
+            let resolver = RegistryResolver(registry: DispatcherRegistry.v1())
+            let model = QueueModel(store: cards)
+            let runner = QueueRunner(store: cards, resolver: resolver)
+            queueModel = model
+            queueRunner = runner
+            queueWindow = QueueWindowController(model: model, runner: runner, resolver: resolver)
+            model.startObserving()
+
+            wirePill(coordinator: coordinator)
+
             Task {
                 let reconciled = (try? await cards.reconcileInterrupted()) ?? 0
                 if reconciled > 0 {
                     voxiLog.notice("Reconciled \(reconciled) interrupted card(s) to failed")
                 }
+                try? await model.load()
             }
         } catch {
             lastError = "Database unavailable: \(error.localizedDescription)"
@@ -82,5 +97,38 @@ final class AppState {
         voxiLog.info("Voxi shutting down")
         eventTask?.cancel()
         hotkeys.stop()
+    }
+
+    /// Show the queue window (menu bar + command-card notice both land here).
+    func openQueue() {
+        queueWindow?.show()
+    }
+
+    // MARK: - Pill wiring
+
+    private func wirePill(coordinator: DictationCoordinator) {
+        coordinator.onStateChange = { [pill] state in
+            pill.transition(to: state)
+        }
+        capture.onLevel = { [pill] level in
+            pill.level = level
+        }
+        // The pill's ✕/✓ mirror Esc and chord-release respectively.
+        pill.onCancel = { [weak self] in
+            guard let self, let coordinator = self.coordinator else { return }
+            coordinator.handle(.cancel, hotkeys: self.hotkeys)
+        }
+        pill.onDone = { [weak self] in
+            guard let self, let coordinator = self.coordinator else { return }
+            coordinator.handle(.actionEnded(.pushToTalk), hotkeys: self.hotkeys)
+        }
+    }
+}
+
+/// Adapts the Dispatchers module's registry to the CommandQueue's resolver protocol.
+private struct RegistryResolver: DispatcherResolving {
+    let registry: DispatcherRegistry
+    func dispatcher(for id: String) -> (any Dispatcher)? {
+        registry.dispatcher(id: id)
     }
 }

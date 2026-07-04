@@ -18,6 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let appState = AppState()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        if CLIMode.runIfRequested() { return }
         appState.start()
     }
 

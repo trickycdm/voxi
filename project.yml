@@ -17,9 +17,6 @@ packages:
     url: https://github.com/FluidInference/FluidAudio
     maxVersion: 0.16.0
     minVersion: 0.15.4
-  KeyboardShortcuts:
-    url: https://github.com/sindresorhus/KeyboardShortcuts
-    from: 3.0.1
   GRDB:
     url: https://github.com/groue/GRDB.swift
     from: 7.11.1
@@ -34,8 +31,6 @@ targets:
         product: WhisperKit
       - package: FluidAudio
         product: FluidAudio
-      - package: KeyboardShortcuts
-        product: KeyboardShortcuts
       - package: GRDB
         product: GRDB
     info:

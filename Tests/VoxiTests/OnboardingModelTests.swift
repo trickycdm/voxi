@@ -188,7 +188,7 @@ import Testing
     }
 }
 
-@Suite struct ChordSymbolsTests {
+@Suite struct OnboardingChordSymbolsTests {
     @Test func defaultChordsRenderTheExpectedSymbols() {
         #expect(ChordSymbols.parts(for: .defaultPushToTalk) == ["fn"])
         #expect(ChordSymbols.parts(for: .defaultToggle) == ["fn", "Space"])
@@ -200,11 +200,11 @@ import Testing
         let everything = ChordBinding(
             control: true, option: true, command: true, shift: true,
             includesFn: true, keyCode: 36)
-        #expect(ChordSymbols.parts(for: everything) == ["fn", "⌃", "⌥", "⇧", "⌘", "↩"])
+        #expect(ChordSymbols.parts(for: everything) == ["fn", "⌃", "⌥", "⇧", "⌘", "Return"])
     }
 
     @Test func unknownKeyCodeFallsBackToNumericName() {
-        let binding = ChordBinding(control: true, keyCode: 11) // B
-        #expect(ChordSymbols.label(for: binding) == "⌃ + key 11")
+        let binding = ChordBinding(control: true, keyCode: 999)
+        #expect(ChordSymbols.label(for: binding) == "⌃ + Key 999")
     }
 }

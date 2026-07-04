@@ -18,6 +18,24 @@ enum ChordSymbols {
         return groups.isEmpty ? "None" : groups.joined(separator: " ")
     }
 
+    /// One entry per key in the chord ("fn" first, then modifier glyphs, then
+    /// the key name) — the onboarding hotkey summary renders these as chips.
+    static func parts(for binding: ChordBinding) -> [String] {
+        var parts: [String] = []
+        if binding.includesFn { parts.append("fn") }
+        if binding.control { parts.append("⌃") }
+        if binding.option { parts.append("⌥") }
+        if binding.shift { parts.append("⇧") }
+        if binding.command { parts.append("⌘") }
+        if let keyCode = binding.keyCode { parts.append(keyName(keyCode)) }
+        return parts
+    }
+
+    /// Single-string form of `parts(for:)`, e.g. "fn + Space".
+    static func label(for binding: ChordBinding) -> String {
+        parts(for: binding).joined(separator: " + ")
+    }
+
     /// Human name for a CGKeyCode on the ANSI-US layout. Unknown codes fall
     /// back to "Key <code>" rather than guessing.
     static func keyName(_ keyCode: UInt16) -> String {

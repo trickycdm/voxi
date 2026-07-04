@@ -5,10 +5,17 @@ struct VoxiApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
-        MenuBarExtra("Voxi", systemImage: "mic.fill") {
+        MenuBarExtra("Voxi", systemImage: "waveform") {
             MenuBarContent()
                 .environment(appDelegate.appState)
         }
+
+        Window("Voxi Hub", id: "hub") {
+            HubView()
+                .environment(appDelegate.appState)
+        }
+        .windowResizability(.contentSize)
+        .defaultSize(width: 760, height: 520)
     }
 }
 
@@ -17,23 +24,82 @@ struct VoxiApp: App {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let appState = AppState()
+    private var onboardingWindow: NSWindow?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         if CLIMode.runIfRequested() { return }
+        NSApp.setActivationPolicy(.accessory)
         appState.start()
+        if OnboardingModel.shouldShow() {
+            showOnboarding()
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         appState.shutdown()
     }
+
+    /// Onboarding lives in a plain NSWindow because it must open at first
+    /// launch, before any SwiftUI scene has an openWindow environment.
+    func showOnboarding() {
+        if let onboardingWindow {
+            onboardingWindow.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        let model = OnboardingModel()
+        let view = OnboardingView(model: model, hotkeys: appState.hotkeys, capture: appState.capture)
+        let window = NSWindow(contentViewController: NSHostingController(rootView: view))
+        window.title = "Welcome to Voxi"
+        window.styleMask = [.titled, .closable]
+        window.isReleasedWhenClosed = false
+        window.center()
+        model.onFinished = { [weak self] in
+            self?.onboardingWindow?.close()
+            self?.onboardingWindow = nil
+        }
+        onboardingWindow = window
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
 }
 
 struct MenuBarContent: View {
     @Environment(AppState.self) private var appState
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
-        Text("Voxi \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")")
+        if appState.hotkeys.permissionStatus != .active {
+            Button("Grant Accessibility Permission…") {
+                appState.hotkeys.requestAccessibility()
+            }
+            Divider()
+        }
+
+        Button("Open Hub") {
+            openWindow(id: "hub")
+            NSApp.activate(ignoringOtherApps: true)
+        }
+        .keyboardShortcut("h")
+
+        Button("Command Queue") {
+            appState.openQueue()
+        }
+        .keyboardShortcut("j")
+
         Divider()
+
+        Button("Run Onboarding Again") {
+            (NSApp.delegate as? AppDelegate)?.showOnboarding()
+        }
+
+        if let error = appState.lastError {
+            Divider()
+            Text(error)
+        }
+
+        Divider()
+
         Button("Quit Voxi") { NSApplication.shared.terminate(nil) }
             .keyboardShortcut("q")
     }

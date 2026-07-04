@@ -55,7 +55,10 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.colin.voxi
         CODE_SIGN_STYLE: Automatic
-        CODE_SIGN_IDENTITY: "-"
+        # Real dev identity (not ad-hoc "-"): TCC grants (Accessibility, Mic)
+        # key off the signing identity and must survive rebuilds.
+        CODE_SIGN_IDENTITY: "Apple Development"
+        DEVELOPMENT_TEAM: F7H963S3B4
         ENABLE_HARDENED_RUNTIME: false
         ENABLE_USER_SCRIPT_SANDBOXING: false
         GENERATE_INFOPLIST_FILE: false

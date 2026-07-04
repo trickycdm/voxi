@@ -12,13 +12,23 @@ import os
 enum CLIMode {
     /// Parsed form of the CLI invocation. Pure and unit-testable.
     struct TranscribeRequest: Equatable, Sendable {
+        enum Pipeline: Equatable, Sendable {
+            /// Print the raw transcript only.
+            case transcribe
+            /// Transcribe then run the dictation refinement pass; print the result.
+            case dictate
+            /// Transcribe, refine into a card draft, print it as JSON.
+            case command
+        }
+
         var wavPath: String
+        var pipeline: Pipeline = .transcribe
         var engineID: String = ASREngineRegistry.defaultEngineID
         var modelID: String?
     }
 
     enum ParseOutcome: Equatable, Sendable {
-        /// No `--transcribe` flag: launch the app normally.
+        /// No CLI flag: launch the app normally.
         case notRequested
         case invalid(String)
         case request(TranscribeRequest)
@@ -26,32 +36,38 @@ enum CLIMode {
 
     /// Parses everything after the executable path.
     static func parse(_ args: [String]) -> ParseOutcome {
-        guard args.contains("--transcribe") else { return .notRequested }
+        let pipelineFlags: [String: TranscribeRequest.Pipeline] = [
+            "--transcribe": .transcribe, "--dictate": .dictate, "--command": .command,
+        ]
+        guard args.contains(where: { pipelineFlags[$0] != nil }) else { return .notRequested }
 
         var wavPath: String?
+        var pipeline: TranscribeRequest.Pipeline = .transcribe
         var engineID: String?
         var modelID: String?
         var index = 0
         while index < args.count {
             let arg = args[index]
             switch arg {
-            case "--transcribe", "--engine", "--model":
+            case "--transcribe", "--dictate", "--command", "--engine", "--model":
                 index += 1
                 guard index < args.count, !args[index].hasPrefix("--") else {
                     return .invalid("missing value for \(arg)")
                 }
                 switch arg {
-                case "--transcribe": wavPath = args[index]
                 case "--engine": engineID = args[index]
-                default: modelID = args[index]
+                case "--model": modelID = args[index]
+                default:
+                    wavPath = args[index]
+                    pipeline = pipelineFlags[arg]!
                 }
             default:
                 return .invalid("unknown argument \(arg)")
             }
             index += 1
         }
-        guard let wavPath else { return .invalid("missing value for --transcribe") }
-        var request = TranscribeRequest(wavPath: wavPath)
+        guard let wavPath else { return .invalid("missing audio file path") }
+        var request = TranscribeRequest(wavPath: wavPath, pipeline: pipeline)
         if let engineID { request.engineID = engineID }
         request.modelID = modelID
         return .request(request)
@@ -67,7 +83,7 @@ enum CLIMode {
             return false
         case .invalid(let why):
             logToStderr("error: \(why)")
-            logToStderr("usage: Voxi --transcribe <wav-path> [--engine <id>] [--model <id>]")
+            logToStderr("usage: Voxi --transcribe|--dictate|--command <wav-path> [--engine <id>] [--model <id>]")
             exit(1)
         case .request(let request):
             Task {
@@ -116,7 +132,27 @@ enum CLIMode {
             let text = try await engine.transcribe(samples: samples, hints: TranscriptionHints())
             await engine.unload()
 
-            print(text)
+            switch request.pipeline {
+            case .transcribe:
+                print(text)
+            case .dictate:
+                let chain = RefinerChain(config: .load())
+                let outcome = await chain.refine(text, context: RefinementContext(mode: .dictation))
+                logToStderr("refiner: \(outcome.refinerID)")
+                print(outcome.text)
+            case .command:
+                let chain = RefinerChain(config: .load())
+                let outcome = await chain.refineCard(from: text, context: RefinementContext(mode: .command))
+                logToStderr("refiner: \(outcome.refinerID)")
+                let draft = outcome.draft
+                let payload: [String: String] = [
+                    "title": draft.title, "summary": draft.summary, "prompt": draft.prompt,
+                    "refinedByLLM": String(draft.refinedByLLM),
+                ]
+                let data = try JSONSerialization.data(
+                    withJSONObject: payload, options: [.prettyPrinted, .sortedKeys])
+                print(String(data: data, encoding: .utf8)!)
+            }
             exit(0)
         } catch {
             logToStderr("error: \((error as? LocalizedError)?.errorDescription ?? String(describing: error))")

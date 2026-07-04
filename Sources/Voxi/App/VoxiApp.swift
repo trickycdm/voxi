@@ -14,6 +14,7 @@ struct VoxiApp: App {
 
 /// AppKit entry point: owns long-lived controllers that shouldn't be tied to
 /// any SwiftUI scene lifecycle (event tap, pill panel, database).
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let appState = AppState()
 

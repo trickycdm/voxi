@@ -6,6 +6,8 @@ import SwiftUI
 /// over full-screen Spaces, and is only ever ordered in/out — never closed.
 @MainActor
 final class PillPanel: NSPanel {
+    private var frameObserver: (any NSObjectProtocol)?
+
     init(content: some View) {
         super.init(
             contentRect: .zero,
@@ -42,6 +44,18 @@ final class PillPanel: NSPanel {
         // macOS 13+: SwiftUI's intrinsic content size drives the panel size.
         hosting.sizingOptions = [.preferredContentSize]
         contentView = hosting
+
+        // That sizing resizes the panel around a fixed bottom-left origin, so
+        // a state change that widens the content walks the pill off-centre to
+        // the right. Watch the content's size and re-pin the midline.
+        hosting.postsFrameChangedNotifications = true
+        frameObserver = NotificationCenter.default.addObserver(
+            forName: NSView.frameDidChangeNotification,
+            object: hosting, queue: .main
+        ) { [weak self] _ in
+            // Delivered on the main queue, so main-actor isolation holds.
+            MainActor.assumeIsolated { self?.recenterAfterContentResize() }
+        }
     }
 
     // Borderless windows refuse key status by default; returning true lets
@@ -59,5 +73,23 @@ final class PillPanel: NSPanel {
         let vf = screen.visibleFrame
         let origin = NSPoint(x: vf.midX - size.width / 2, y: vf.minY + padding)
         setFrame(NSRect(origin: origin, size: size), display: true)
+    }
+
+    /// Keep the capsule's centre on the screen's midline through content size
+    /// changes. Bottom edge stays anchored (AppKit origin is bottom-left, so
+    /// height growth already extends upward); only x needs correcting. Uses
+    /// the panel's own screen so a mid-session resize can't yank the pill to
+    /// another display.
+    private func recenterAfterContentResize() {
+        guard isVisible, let size = contentView?.frame.size else { return }
+        guard let screen = screen ?? NSScreen.main ?? NSScreen.screens.first else { return }
+        let target = NSRect(
+            origin: NSPoint(x: screen.visibleFrame.midX - size.width / 2, y: frame.minY),
+            size: size
+        )
+        // Our own setFrame refires the frame notification; this equal-frame
+        // early-return is the loop's exit condition.
+        guard target != frame else { return }
+        setFrame(target, display: true)
     }
 }

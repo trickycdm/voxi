@@ -41,22 +41,27 @@ struct HubView: View {
             }
             .navigationSplitViewColumnWidth(min: 150, ideal: 170)
         } detail: {
-            switch selection ?? .history {
-            case .history:
-                if let store = appState.historyStore {
-                    HistoryView(store: store)
-                } else {
-                    databaseUnavailable
+            Group {
+                switch selection ?? .history {
+                case .history:
+                    if let store = appState.historyStore {
+                        HistoryView(store: store)
+                    } else {
+                        databaseUnavailable
+                    }
+                case .dictionary:
+                    if let store = appState.dictionaryStore {
+                        DictionaryView(store: store)
+                    } else {
+                        databaseUnavailable
+                    }
+                case .settings:
+                    HubSettingsView()
                 }
-            case .dictionary:
-                if let store = appState.dictionaryStore {
-                    DictionaryView(store: store)
-                } else {
-                    databaseUnavailable
-                }
-            case .settings:
-                HubSettingsView()
             }
+            // Paper ground on the detail pane only; the sidebar keeps the
+            // system vibrancy material (it resists .background on macOS 14).
+            .background(Color.voxiPaper)
         }
         .frame(minWidth: 760, minHeight: 480)
     }

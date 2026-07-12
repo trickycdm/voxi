@@ -13,6 +13,7 @@ struct HubSettingsView: View {
             RefinementSettingsSection()
         }
         .formStyle(.grouped)
+        .scrollContentBackground(.hidden)  // let the Paper ground show through
         .navigationTitle("Settings")
     }
 }

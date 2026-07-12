@@ -61,7 +61,7 @@ struct MicrophoneSettingsSection: View {
             LabeledContent("Active input") {
                 Label(model.activeDeviceName, systemImage: "mic.fill")
                     .fontWeight(.semibold)
-                    .foregroundStyle(model.selectionUnavailable ? AnyShapeStyle(.orange) : AnyShapeStyle(.primary))
+                    .foregroundStyle(model.selectionUnavailable ? AnyShapeStyle(Color.voxiWarning) : AnyShapeStyle(.primary))
             }
 
             Picker("Input device", selection: $model.selectedUID) {
@@ -78,7 +78,7 @@ struct MicrophoneSettingsSection: View {
                 model.refreshDevices()
             }
         } header: {
-            Text("Microphone")
+            Text("Microphone").voxiPlaque()
         } footer: {
             Text("The system default follows whatever macOS is using. A specific device is used only while it is connected.")
         }

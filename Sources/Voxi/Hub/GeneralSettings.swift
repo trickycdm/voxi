@@ -76,7 +76,7 @@ struct GeneralSettingsSection: View {
     @State private var insertion = InsertionSettingsModel()
 
     var body: some View {
-        Section("General") {
+        Section {
             Toggle(
                 "Launch Voxi at login",
                 isOn: Binding(
@@ -94,13 +94,13 @@ struct GeneralSettingsSection: View {
                         "Waiting for approval in System Settings › Login Items",
                         systemImage: "exclamationmark.triangle"
                     )
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(Color.voxiWarning)
                 }
             }
             if let error = launch.lastError {
                 Text(error)
                     .font(.caption)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(Color.voxiDanger)
             }
 
             Picker("Insert text using", selection: $insertion.settings.method) {
@@ -109,6 +109,8 @@ struct GeneralSettingsSection: View {
                 }
             }
             Toggle("Restore clipboard after paste", isOn: $insertion.settings.restoreClipboard)
+        } header: {
+            Text("General").voxiPlaque()
         }
         .onAppear {
             launch.refresh()

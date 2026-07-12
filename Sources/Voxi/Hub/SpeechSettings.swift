@@ -116,10 +116,10 @@ struct SpeechSettingsSection: View {
             if let error = model.errorMessage {
                 Label(error, systemImage: "exclamationmark.triangle")
                     .font(.caption)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(Color.voxiDanger)
             }
         } header: {
-            Text("Speech Recognition")
+            Text("Speech Recognition").voxiPlaque()
         } footer: {
             Text("Engine and model changes take effect on the next dictation. When no model is chosen, the recommended one is used.")
         }
@@ -167,7 +167,7 @@ struct ModelRowView: View {
             } else if info.isDownloaded {
                 if isSelected {
                     Label("Active", systemImage: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
+                        .foregroundStyle(Color.voxiSuccess)
                         .labelStyle(.titleAndIcon)
                 } else {
                     Button("Use") { onSelect() }

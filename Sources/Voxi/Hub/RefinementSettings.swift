@@ -107,7 +107,7 @@ struct RefinementSettingsSection: View {
                 testStatus
             }
         } header: {
-            Text("Refinement")
+            Text("Refinement").voxiPlaque()
         } footer: {
             Text("Rule-based cleanup always runs as a fallback when the LLM is unreachable, and everything works offline without an LLM. The local (OpenAI-compatible) backend covers Ollama, LM Studio, and llama.cpp servers.")
         }
@@ -123,11 +123,11 @@ struct RefinementSettingsSection: View {
                 .controlSize(.small)
         case .ok(let message):
             Label(message, systemImage: "checkmark.circle.fill")
-                .foregroundStyle(.green)
+                .foregroundStyle(Color.voxiSuccess)
                 .font(.callout)
         case .failed(let message):
             Label(message, systemImage: "xmark.circle.fill")
-                .foregroundStyle(.red)
+                .foregroundStyle(Color.voxiDanger)
                 .font(.callout)
                 .lineLimit(2)
         }

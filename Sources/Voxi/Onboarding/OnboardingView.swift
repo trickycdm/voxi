@@ -21,6 +21,7 @@ struct OnboardingView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             footer
         }
+        .background(Color.voxiPaper)
         .frame(width: 560, height: 420)
         .task { await pollLiveState() }
     }
@@ -70,17 +71,23 @@ struct OnboardingView: View {
             }
         }
         .padding(20)
-        .background(.bar)
+        .background(Color.voxiCard)
+        .overlay(alignment: .top) {
+            Rectangle().fill(Color.voxiHairline).frame(height: 1)
+        }
     }
 
+    /// Gauge ticks, not dots: onboarding is a real sequence, so the tachometer
+    /// motif encodes true order — done and current ticks in accent, the
+    /// current one taller.
     private var progressDots: some View {
-        HStack(spacing: 7) {
+        HStack(alignment: .bottom, spacing: 6) {
             ForEach(model.steps.indices, id: \.self) { index in
-                Circle()
-                    .fill(index == model.stepIndex
-                        ? AnyShapeStyle(.tint)
-                        : AnyShapeStyle(.quaternary))
-                    .frame(width: 7, height: 7)
+                RoundedRectangle(cornerRadius: 1.5)
+                    .fill(index <= model.stepIndex
+                        ? AnyShapeStyle(Color.accentColor)
+                        : AnyShapeStyle(Color.voxiHairline))
+                    .frame(width: 3, height: index == model.stepIndex ? 14 : 10)
             }
         }
         .accessibilityLabel("Step \(model.stepIndex + 1) of \(model.steps.count)")
@@ -152,7 +159,7 @@ private struct PermissionStatusRow: View {
             Text(granted ? grantedText : pendingText)
         } icon: {
             Image(systemName: granted ? "checkmark.circle.fill" : "circle.dashed")
-                .foregroundStyle(granted ? AnyShapeStyle(.green) : AnyShapeStyle(.secondary))
+                .foregroundStyle(granted ? AnyShapeStyle(Color.voxiSuccess) : AnyShapeStyle(.secondary))
         }
         .font(.callout.weight(.medium))
         .foregroundStyle(granted ? .primary : .secondary)
@@ -286,7 +293,7 @@ private struct MicTestStep: View {
             if model.micTestPassed {
                 Label("Loud and clear!", systemImage: "checkmark.circle.fill")
                     .font(.callout.weight(.medium))
-                    .foregroundStyle(.green)
+                    .foregroundStyle(Color.voxiSuccess)
             } else {
                 Text("Say something — “testing, one two three” works fine.")
                     .foregroundStyle(.secondary)
@@ -299,7 +306,7 @@ private struct MicTestStep: View {
                 VStack(spacing: 6) {
                     Label(captureError, systemImage: "exclamationmark.triangle.fill")
                         .font(.callout)
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(Color.voxiWarning)
                     Button("Try Again") { startTest() }
                 }
             } else if !deviceName.isEmpty {
@@ -317,9 +324,9 @@ private struct MicTestStep: View {
     private var levelMeter: some View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
-                Capsule().fill(.quaternary)
+                Capsule().fill(Color.voxiInset)
                 Capsule()
-                    .fill(model.micTestPassed ? AnyShapeStyle(.green) : AnyShapeStyle(.tint))
+                    .fill(model.micTestPassed ? AnyShapeStyle(Color.voxiSuccess) : AnyShapeStyle(.tint))
                     .frame(width: max(0, geo.size.width * CGFloat(min(1, level))))
                     .animation(.linear(duration: 0.06), value: level)
                 Rectangle()

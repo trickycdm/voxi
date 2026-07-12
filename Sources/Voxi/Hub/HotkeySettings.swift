@@ -28,11 +28,11 @@ struct HotkeySettingsSection: View {
                         "The 🌐 key also triggers a system action. Set “Press 🌐 key to: Do Nothing” in Keyboard settings.",
                         systemImage: "exclamationmark.triangle"
                     )
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(Color.voxiWarning)
                 }
             }
         } header: {
-            Text("Hotkeys")
+            Text("Hotkeys").voxiPlaque()
         } footer: {
             Text("Click a field, then press the chord — modifier-only chords like Fn or ⌃⌥ work. Esc or click away to cancel.")
         }
@@ -57,13 +57,13 @@ struct HotkeySettingsSection: View {
         switch hotkeys.permissionStatus {
         case .active:
             Label("Granted", systemImage: "checkmark.circle.fill")
-                .foregroundStyle(.green)
+                .foregroundStyle(Color.voxiSuccess)
         case .waitingForTrust:
             Label("Not granted — hotkeys inactive", systemImage: "xmark.circle.fill")
-                .foregroundStyle(.orange)
+                .foregroundStyle(Color.voxiWarning)
         case .tapFailed:
             Label("Event tap failed", systemImage: "exclamationmark.triangle.fill")
-                .foregroundStyle(.red)
+                .foregroundStyle(Color.voxiDanger)
         case .unknown:
             Label("Checking…", systemImage: "circle.dashed")
                 .foregroundStyle(.secondary)

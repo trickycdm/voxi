@@ -5,7 +5,9 @@ struct VoxiApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
-        MenuBarExtra("Voxi", systemImage: "waveform") {
+        // Template-rendered roundel (waveform in a circle) — the enamel-badge
+        // brand mark; the system tints it for menu-bar appearance.
+        MenuBarExtra("Voxi", image: "MenuBarRoundel") {
             MenuBarContent()
                 .environment(appDelegate.appState)
         }
@@ -56,6 +58,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.title = "Welcome to Voxi"
         window.styleMask = [.titled, .closable]
         window.isReleasedWhenClosed = false
+        window.titlebarAppearsTransparent = true
+        window.backgroundColor = .voxiPaper
         window.center()
         model.onFinished = { [weak self] in
             self?.onboardingWindow?.close()

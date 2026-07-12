@@ -84,6 +84,16 @@ final class AppDatabase: Sendable {
             }
         }
 
+        // Append-only: never edit a registered migration (shipped databases
+        // have already run it). New columns are nullable/defaulted.
+        migrator.registerMigration("v2") { db in
+            try db.alter(table: "actionCard") { t in
+                // Backend session id from the card's last run (claude
+                // session_id) — lets a follow-up card resume the session.
+                t.add(column: "sessionID", .text)
+            }
+        }
+
         return migrator
     }
 }

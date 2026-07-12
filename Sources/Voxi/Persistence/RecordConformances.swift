@@ -101,6 +101,7 @@ extension ActionCard: FetchableRecord, PersistableRecord {
         card.exitCode = row["exitCode"]
         card.dispatchedAt = row["dispatchedAt"]
         card.finishedAt = row["finishedAt"]
+        card.sessionID = row["sessionID"]
         self = card
     }
 
@@ -119,5 +120,6 @@ extension ActionCard: FetchableRecord, PersistableRecord {
         container["exitCode"] = exitCode
         container["dispatchedAt"] = dispatchedAt
         container["finishedAt"] = finishedAt
+        container["sessionID"] = sessionID
     }
 }

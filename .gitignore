@@ -9,3 +9,4 @@ xcuserdata/
 Tests/Fixtures/audio/*.wav
 .claude/settings.local.json
 .claude/worktrees/
+plans/.tmp/

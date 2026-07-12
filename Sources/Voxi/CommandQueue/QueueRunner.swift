@@ -27,6 +27,16 @@ final class QueueRunner {
     /// Live state per card, kept after completion until retried or replaced.
     private(set) var liveRuns: [UUID: LiveRun] = [:]
 
+    /// Fired once per run after its terminal state (and DB writes) are
+    /// recorded: (cardID, success, resultText). Optional shell hook — the
+    /// runner stays UI-agnostic and headless tests simply leave it nil.
+    @ObservationIgnored var onRunFinished: ((UUID, Bool, String?) -> Void)?
+
+    /// Cards left in the current "Run All" drain; nil when not draining.
+    private(set) var drainRemaining: Int?
+    @ObservationIgnored private var drainTask: Task<Void, Never>?
+    @ObservationIgnored private var drainCurrentCardID: UUID?
+
     @ObservationIgnored private let store: CardStore
     @ObservationIgnored private let resolver: any DispatcherResolving
     @ObservationIgnored private let flushInterval: Duration
@@ -118,6 +128,53 @@ final class QueueRunner {
         await handles[cardID]?.outer.value
     }
 
+    // MARK: - Run All (sequential drain)
+
+    /// Dispatches every currently-dispatchable queued card, oldest first,
+    /// strictly one at a time. Snapshot semantics: cards queued after the
+    /// call are not picked up. A failing card doesn't stop the drain (its
+    /// failure is surfaced like any other run); non-dispatchable cards are
+    /// skipped and stay queued. Returns when the drain ends or is stopped.
+    func runAll() async {
+        guard drainTask == nil else { return }
+        let cards = (try? await store.allNewestFirst()) ?? []
+        let order = QueueLogic.drainOrder(cards: cards) { resolver.dispatcher(for: $0)?.paramSpecs }
+        guard !order.isEmpty else { return }
+
+        let task = Task { [weak self] in
+            for (index, cardID) in order.enumerated() {
+                guard let self, !Task.isCancelled else { return }
+                self.drainRemaining = order.count - index
+                self.drainCurrentCardID = cardID
+                do {
+                    try await self.dispatch(cardID: cardID)
+                    await self.awaitCompletion(cardID: cardID)
+                } catch {
+                    // Raced state change (e.g. card deleted or dispatched by
+                    // hand mid-drain) — skip it and keep draining.
+                    voxiLog.notice("queue: run-all skipped \(cardID, privacy: .public) (\(error.localizedDescription, privacy: .public))")
+                }
+            }
+        }
+        drainTask = task
+        await task.value
+        drainTask = nil
+        drainCurrentCardID = nil
+        drainRemaining = nil
+    }
+
+    /// Stops the drain: the in-flight card is cancelled (recorded failed,
+    /// like any manual cancel); the cards not yet started stay queued.
+    func stopDrain() {
+        guard let task = drainTask else { return }
+        task.cancel()
+        if let current = drainCurrentCardID {
+            cancel(cardID: current)
+        }
+    }
+
+    var isDraining: Bool { drainRemaining != nil }
+
     // MARK: - Run loop
 
     private func run(
@@ -162,6 +219,7 @@ final class QueueRunner {
 
         // The event stream only finishes when execute has returned or thrown,
         // so this await resolves immediately.
+        let succeeded: Bool
         do {
             let result = try await exec.value
             if let text = result.resultText, !text.isEmpty {
@@ -174,7 +232,10 @@ final class QueueRunner {
             // A success with zero events still needs dispatched → running
             // before the terminal transition (running → succeeded).
             await ensureRunning()
-            await recordFinish(cardID, success: result.success, exitCode: result.exitCode)
+            await recordFinish(
+                cardID, success: result.success, exitCode: result.exitCode,
+                sessionID: result.sessionID)
+            succeeded = result.success
         } catch is CancellationError {
             let line = "Cancelled by user\n"
             appendTail(cardID, line)
@@ -182,6 +243,7 @@ final class QueueRunner {
             await throttler.finish()
             liveRuns[cardID]?.resultText = "Cancelled by user"
             await recordFinish(cardID, success: false, exitCode: nil)
+            succeeded = false
         } catch {
             let line = "Dispatch failed: \(error.localizedDescription)\n"
             appendTail(cardID, line)
@@ -189,11 +251,13 @@ final class QueueRunner {
             await throttler.finish()
             liveRuns[cardID]?.resultText = error.localizedDescription
             await recordFinish(cardID, success: false, exitCode: nil)
+            succeeded = false
         }
 
         liveRuns[cardID]?.activity = nil
         liveRuns[cardID]?.isFinished = true
         handles[cardID] = nil
+        onRunFinished?(cardID, succeeded, liveRuns[cardID]?.resultText)
     }
 
     private func appendTail(_ cardID: UUID, _ chunk: String) {
@@ -205,9 +269,9 @@ final class QueueRunner {
         liveRuns[cardID] = run
     }
 
-    private func recordFinish(_ cardID: UUID, success: Bool, exitCode: Int?) async {
+    private func recordFinish(_ cardID: UUID, success: Bool, exitCode: Int?, sessionID: String? = nil) async {
         do {
-            try await store.finish(id: cardID, success: success, exitCode: exitCode)
+            try await store.finish(id: cardID, success: success, exitCode: exitCode, sessionID: sessionID)
         } catch {
             voxiLog.error("queue: result write failed for \(cardID, privacy: .public) (\(error.localizedDescription, privacy: .public))")
         }
@@ -224,5 +288,6 @@ final class QueueRunner {
         } catch {
             voxiLog.error("queue: spawn-failure write failed for \(cardID, privacy: .public) (\(error.localizedDescription, privacy: .public))")
         }
+        onRunFinished?(cardID, false, message)
     }
 }

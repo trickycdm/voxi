@@ -29,11 +29,19 @@ struct QueueView: View {
     let model: QueueModel
     let runner: QueueRunner
     let resolver: any DispatcherResolving
+    var openLog: ((ActionCard) -> Void)? = nil
 
     @State private var expandedCardID: UUID?
 
+    /// Queued cards a "Run All" would pick up right now.
+    private var dispatchableCount: Int {
+        QueueLogic.drainOrder(cards: model.cards) { resolver.dispatcher(for: $0)?.paramSpecs }.count
+    }
+
     var body: some View {
-        Group {
+        VStack(spacing: 0) {
+            headerBar
+            Divider()
             if model.cards.isEmpty {
                 emptyState
             } else {
@@ -48,7 +56,8 @@ struct QueueView: View {
                                 },
                                 model: model,
                                 runner: runner,
-                                resolver: resolver
+                                resolver: resolver,
+                                openLog: openLog
                             )
                         }
                     }
@@ -58,6 +67,32 @@ struct QueueView: View {
         }
         .frame(minWidth: 440, minHeight: 320)
         .task { model.startObserving() }
+    }
+
+    private var headerBar: some View {
+        HStack {
+            if runner.isDraining {
+                ProgressView()
+                    .controlSize(.small)
+                Text("Running queue…")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            if runner.isDraining {
+                Button("Stop (\(runner.drainRemaining ?? 0) left)") {
+                    runner.stopDrain()
+                }
+            } else {
+                Button("Run All (\(dispatchableCount))") {
+                    Task { await runner.runAll() }
+                }
+                .disabled(dispatchableCount == 0)
+                .help("Dispatch every ready card, oldest first, one at a time")
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
     }
 
     private var emptyState: some View {
@@ -87,6 +122,7 @@ struct CardView: View {
     let model: QueueModel
     let runner: QueueRunner
     let resolver: any DispatcherResolving
+    var openLog: ((ActionCard) -> Void)? = nil
 
     private var workingDirectory: String? {
         let params = (try? QueueParams.decode(card.paramsJSON)) ?? [:]
@@ -102,7 +138,7 @@ struct CardView: View {
             if isExpanded {
                 Divider()
                     .padding(.horizontal, 12)
-                CardDetailView(card: card, model: model, runner: runner, resolver: resolver)
+                CardDetailView(card: card, model: model, runner: runner, resolver: resolver, openLog: openLog)
                     .padding(12)
             }
         }

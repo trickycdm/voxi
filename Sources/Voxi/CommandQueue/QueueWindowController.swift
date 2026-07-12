@@ -9,12 +9,19 @@ final class QueueWindowController {
     private let model: QueueModel
     private let runner: QueueRunner
     private let resolver: any DispatcherResolving
+    private let openLog: ((ActionCard) -> Void)?
     private var window: NSWindow?
 
-    init(model: QueueModel, runner: QueueRunner, resolver: any DispatcherResolving) {
+    init(
+        model: QueueModel,
+        runner: QueueRunner,
+        resolver: any DispatcherResolving,
+        openLog: ((ActionCard) -> Void)? = nil
+    ) {
         self.model = model
         self.runner = runner
         self.resolver = resolver
+        self.openLog = openLog
     }
 
     func show() {
@@ -50,7 +57,7 @@ final class QueueWindowController {
         window.center()
         window.setFrameAutosaveName("VoxiQueueWindow")
         window.contentView = NSHostingView(
-            rootView: QueueView(model: model, runner: runner, resolver: resolver)
+            rootView: QueueView(model: model, runner: runner, resolver: resolver, openLog: openLog)
         )
         return window
     }

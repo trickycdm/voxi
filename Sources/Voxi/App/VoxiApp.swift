@@ -48,7 +48,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         let model = OnboardingModel()
-        let view = OnboardingView(model: model, hotkeys: appState.hotkeys, capture: appState.capture)
+        // The mic test gets its own AudioCapture: AudioCapture is one-consumer
+        // (single onLevel slot, exclusive engine), and sharing AppState's
+        // instance let the mic test steal — then nil — the pill's level sink.
+        let view = OnboardingView(model: model, hotkeys: appState.hotkeys, capture: AudioCapture())
         let window = NSWindow(contentViewController: NSHostingController(rootView: view))
         window.title = "Welcome to Voxi"
         window.styleMask = [.titled, .closable]

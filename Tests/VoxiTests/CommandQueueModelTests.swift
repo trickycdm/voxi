@@ -188,22 +188,30 @@ private func makeModel() throws -> (QueueModel, CardStore) {
 
     @Test func dispatchRequiresQueuedStatus() {
         let params = ["workingDirectory": "/tmp"]
-        #expect(QueueLogic.canDispatch(status: .queued, params: params, specs: specs))
+        #expect(QueueLogic.canDispatch(status: .queued, prompt: "Do it.", params: params, specs: specs))
         for status in CardStatus.allCases where status != .queued {
-            #expect(!QueueLogic.canDispatch(status: status, params: params, specs: specs))
+            #expect(!QueueLogic.canDispatch(status: status, prompt: "Do it.", params: params, specs: specs))
         }
     }
 
     @Test func dispatchRequiresRequiredParams() {
-        #expect(!QueueLogic.canDispatch(status: .queued, params: [:], specs: specs))
-        #expect(!QueueLogic.canDispatch(status: .queued, params: ["workingDirectory": "   "], specs: specs))
-        #expect(QueueLogic.canDispatch(status: .queued, params: ["workingDirectory": "/tmp"], specs: specs))
+        #expect(!QueueLogic.canDispatch(status: .queued, prompt: "Do it.", params: [:], specs: specs))
+        #expect(!QueueLogic.canDispatch(status: .queued, prompt: "Do it.", params: ["workingDirectory": "   "], specs: specs))
+        #expect(QueueLogic.canDispatch(status: .queued, prompt: "Do it.", params: ["workingDirectory": "/tmp"], specs: specs))
         // Optional params may be absent.
         #expect(QueueLogic.canDispatch(
             status: .queued,
+            prompt: "Do it.",
             params: ["workingDirectory": "/tmp", "extraFlags": ""],
             specs: specs
         ))
+    }
+
+    @Test func dispatchRequiresNonBlankPrompt() {
+        let params = ["workingDirectory": "/tmp"]
+        #expect(!QueueLogic.canDispatch(status: .queued, prompt: "", params: params, specs: specs))
+        #expect(!QueueLogic.canDispatch(status: .queued, prompt: "  \n ", params: params, specs: specs))
+        #expect(QueueLogic.canDispatch(status: .queued, prompt: "Do it.", params: params, specs: specs))
     }
 
     @Test func statusChipMapping() {
@@ -277,5 +285,129 @@ private func makeModel() throws -> (QueueModel, CardStore) {
         let throttler = LogThrottler(interval: .milliseconds(1)) { recorder.record($0) }
         await throttler.finish()
         #expect(recorder.chunks.isEmpty)
+    }
+}
+
+@MainActor
+@Suite struct QueueFollowUpTests {
+    @Test func followUpCarriesSessionAndParams() async throws {
+        let (model, store) = try makeModel()
+        let card = try await model.addCard(
+            draft: makeDraft(),
+            rawTranscript: "r",
+            dispatcherID: "claude-code",
+            params: ["workingDirectory": "/tmp/repos"]
+        )
+        try await store.setStatus(id: card.id, to: .dispatched)
+        try await store.setStatus(id: card.id, to: .running)
+        try await store.finish(id: card.id, success: true, exitCode: 0, sessionID: "sess-1")
+
+        let finished = try #require(try await store.fetch(id: card.id))
+        #expect(finished.sessionID == "sess-1")
+
+        let followUp = try await model.followUp(from: finished)
+        let stored = try #require(try await store.fetch(id: followUp.id))
+        #expect(stored.status == .queued)
+        #expect(stored.title == "Follow-up: Build climbing tracker")
+        #expect(stored.prompt.isEmpty)
+        #expect(stored.sessionID == nil)
+        let params = try QueueParams.decode(stored.paramsJSON)
+        #expect(params["resumeSessionID"] == "sess-1")
+        #expect(params["workingDirectory"] == "/tmp/repos")
+    }
+
+    @Test func followUpWithoutSessionThrows() async throws {
+        let (model, _) = try makeModel()
+        let card = try await model.addCard(draft: makeDraft(), rawTranscript: "r", dispatcherID: "d")
+        await #expect(throws: QueueError.noSessionToResume(card.id)) {
+            try await model.followUp(from: card)
+        }
+    }
+
+    @Test func retryClearsStoredSessionID() async throws {
+        let (model, store) = try makeModel()
+        let card = try await model.addCard(
+            draft: makeDraft(), rawTranscript: "r", dispatcherID: "d")
+        try await store.setStatus(id: card.id, to: .dispatched)
+        try await store.setStatus(id: card.id, to: .running)
+        try await store.finish(id: card.id, success: false, exitCode: 1, sessionID: "sess-2")
+
+        try await model.retry(id: card.id)
+        let retried = try #require(try await store.fetch(id: card.id))
+        #expect(retried.status == .queued)
+        #expect(retried.sessionID == nil)
+    }
+}
+
+@Suite struct IntegerInputSanitizerTests {
+    @Test func clampsIntoRange() {
+        #expect(QueueLogic.sanitizedIntegerInput("500", range: 1...200) == "200")
+        #expect(QueueLogic.sanitizedIntegerInput("0", range: 1...200) == "1")
+        #expect(QueueLogic.sanitizedIntegerInput("25", range: 1...200) == "25")
+    }
+
+    @Test func filtersNonDigits() {
+        #expect(QueueLogic.sanitizedIntegerInput("2a5", range: 1...200) == "25")
+        #expect(QueueLogic.sanitizedIntegerInput("abc", range: 1...200) == "")
+        #expect(QueueLogic.sanitizedIntegerInput("", range: 1...200) == "")
+    }
+}
+
+@MainActor
+@Suite struct DrainOrderTests {
+    private let specs = [
+        DispatcherParamSpec(id: "workingDirectory", label: "Working directory", kind: .directory, required: true)
+    ]
+
+    private func card(
+        _ title: String,
+        createdAt: Date,
+        status: CardStatus = .queued,
+        prompt: String = "Do it.",
+        dispatcherID: String = "fake",
+        paramsJSON: String = #"{"workingDirectory":"/tmp"}"#
+    ) -> ActionCard {
+        var card = ActionCard(
+            createdAt: createdAt, title: title, summary: "s", prompt: prompt,
+            rawTranscript: "r", refinedByLLM: false, dispatcherID: dispatcherID,
+            paramsJSON: paramsJSON
+        )
+        card.status = status
+        return card
+    }
+
+    @Test func ordersOldestFirstAndSkipsIneligible() {
+        let t0 = Date(timeIntervalSinceReferenceDate: 0)
+        let newest = card("newest", createdAt: t0.addingTimeInterval(30))
+        let oldest = card("oldest", createdAt: t0)
+        let running = card("running", createdAt: t0.addingTimeInterval(10), status: .running)
+        let blankPrompt = card("blank", createdAt: t0.addingTimeInterval(20), prompt: "  ")
+        let noParams = card("noParams", createdAt: t0.addingTimeInterval(25), paramsJSON: "{}")
+        let unknownDispatcher = card("unknown", createdAt: t0.addingTimeInterval(5), dispatcherID: "ghost")
+
+        // Newest-first input (as the model holds them) still drains oldest-first.
+        let order = QueueLogic.drainOrder(
+            cards: [newest, noParams, blankPrompt, running, unknownDispatcher, oldest],
+            specsFor: { $0 == "fake" ? specs : nil }
+        )
+        #expect(order == [oldest.id, newest.id])
+    }
+}
+
+@Suite struct DisplayLogTests {
+    @Test func liveTailWinsWhileInFlight() {
+        for status in [CardStatus.dispatched, .running] {
+            #expect(QueueLogic.displayLog(status: status, liveTail: "tail", persistedLog: "db") == "tail")
+        }
+    }
+
+    @Test func persistedLogWinsWhenTerminalOrQueued() {
+        for status in [CardStatus.queued, .succeeded, .failed] {
+            #expect(QueueLogic.displayLog(status: status, liveTail: "stale tail", persistedLog: "db") == "db")
+        }
+    }
+
+    @Test func missingTailFallsBackToPersisted() {
+        #expect(QueueLogic.displayLog(status: .running, liveTail: nil, persistedLog: "db") == "db")
     }
 }

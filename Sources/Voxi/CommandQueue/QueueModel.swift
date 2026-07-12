@@ -91,4 +91,28 @@ final class QueueModel {
     func retry(id: UUID) async throws {
         try await store.setStatus(id: id, to: .queued)
     }
+
+    /// Creates a new queued card that resumes the given card's backend
+    /// session: same working directory and params, empty prompt (the user
+    /// types the follow-up), `resumeSessionID` set so the dispatcher appends
+    /// `--resume`. The empty prompt keeps it un-dispatchable until edited.
+    @discardableResult
+    func followUp(from card: ActionCard) async throws -> ActionCard {
+        guard let sessionID = card.sessionID, !sessionID.isEmpty else {
+            throw QueueError.noSessionToResume(card.id)
+        }
+        var params = (try? QueueParams.decode(card.paramsJSON)) ?? [:]
+        params[QueueParams.resumeSessionIDKey] = sessionID
+        let followUp = ActionCard(
+            title: "Follow-up: \(card.title)",
+            summary: "Continues the session from “\(card.title)”.",
+            prompt: "",
+            rawTranscript: "",
+            refinedByLLM: false,
+            dispatcherID: card.dispatcherID,
+            paramsJSON: try QueueParams.encode(params)
+        )
+        try await store.insert(followUp)
+        return followUp
+    }
 }

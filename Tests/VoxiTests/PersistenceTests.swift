@@ -1,4 +1,5 @@
 import Foundation
+import GRDB
 import Testing
 @testable import Voxi
 
@@ -56,6 +57,35 @@ private func makeCard(
         #expect(tables.fts)
         #expect(tables.dictionary)
         #expect(tables.card)
+    }
+
+    @Test func v2AddsSessionIDPreservingV1Rows() async throws {
+        // Build a database exactly as a v1 install left it, with a row.
+        let queue = try DatabaseQueue()
+        let migrator = AppDatabase.migrator
+        try migrator.migrate(queue, upTo: "v1")
+        try await queue.write { db in
+            try db.execute(
+                sql: """
+                INSERT INTO actionCard
+                  (uuid, createdAt, title, summary, prompt, rawTranscript, refinedByLLM,
+                   status, dispatcherID, paramsJSON, log, exitCode)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                arguments: ["11111111-1111-1111-1111-111111111111", fixedDate(), "Old card", "s", "p", "r",
+                            true, "succeeded", "claude-code", "{}", "old log", 0]
+            )
+        }
+
+        try migrator.migrate(queue)
+
+        let migrated = try #require(try await queue.read { db in
+            try ActionCard.fetchOne(db, key: "11111111-1111-1111-1111-111111111111")
+        })
+        #expect(migrated.title == "Old card")
+        #expect(migrated.status == .succeeded)
+        #expect(migrated.log == "old log")
+        #expect(migrated.sessionID == nil)
     }
 }
 

@@ -34,7 +34,7 @@ extension CardStore {
     /// independently (unlike `setResult`, which infers status from the exit
     /// code — a dispatcher can fail with exit 0, e.g. an API error result,
     /// or finish with no exit code at all, e.g. cancellation).
-    func finish(id: UUID, success: Bool, exitCode: Int?) async throws {
+    func finish(id: UUID, success: Bool, exitCode: Int?, sessionID: String? = nil) async throws {
         try await database.dbQueue.write { db in
             guard var card = try ActionCard.fetchOne(db, key: id.uuidString.lowercased()) else {
                 throw PersistenceError.notFound(id)
@@ -46,6 +46,9 @@ extension CardStore {
             card.status = next
             card.exitCode = exitCode
             card.finishedAt = Date()
+            // Written atomically with the terminal state; nil (cancel/throw
+            // paths) leaves any previously stored session id untouched.
+            if let sessionID { card.sessionID = sessionID }
             try card.update(db)
         }
     }

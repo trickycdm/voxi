@@ -7,9 +7,26 @@ struct ClaudeCodeDispatcher: Dispatcher {
     let id = "claude-code"
     let displayName = "Claude Code"
 
+    /// Verified against CLI 2.1.200 (`--permission-mode` rejects anything else).
+    static let permissionModes = ["acceptEdits", "auto", "bypassPermissions", "manual", "dontAsk", "plan"]
+    static let defaultPermissionMode = "acceptEdits"
+    static let maxTurnsRange = 1...200
+    static let defaultMaxTurns = 25
+
     var paramSpecs: [DispatcherParamSpec] {
         [
             DispatcherParamSpec(id: "workingDirectory", label: "Working Directory", kind: .directory, required: true),
+            DispatcherParamSpec(
+                id: "permissionMode", label: "Permission Mode",
+                kind: .choice(options: Self.permissionModes), required: false,
+                defaultValue: Self.defaultPermissionMode),
+            DispatcherParamSpec(
+                id: "maxTurns", label: "Max Turns",
+                kind: .integer(range: Self.maxTurnsRange), required: false,
+                defaultValue: String(Self.defaultMaxTurns)),
+            // Visible (not hidden state) so a follow-up card's resume target
+            // can be seen and cleared in the generic param UI.
+            DispatcherParamSpec(id: "resumeSessionID", label: "Resume Session ID", kind: .string, required: false),
             DispatcherParamSpec(id: "extraFlags", label: "Extra CLI Flags", kind: .string, required: false),
         ]
     }
@@ -37,14 +54,7 @@ struct ClaudeCodeDispatcher: Dispatcher {
         }
         try Task.checkCancellation()
 
-        var arguments = [
-            "-p", prompt,
-            "--output-format", "stream-json",
-            "--verbose",
-            "--permission-mode", "acceptEdits",
-            "--max-turns", "25",
-        ]
-        arguments += Self.tokenizeFlags(params["extraFlags"] ?? "")
+        let arguments = try Self.arguments(prompt: prompt, params: params)
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: binary.path)
@@ -100,10 +110,12 @@ struct ClaudeCodeDispatcher: Dispatcher {
                 @Sendable func maybeFinish() {
                     let outcome: DispatchResult? = state.withLock { s in
                         guard s.stdoutDone, s.stderrDone, let exitCode = s.exitCode else { return nil }
-                        return Self.outcome(
+                        var out = Self.outcome(
                             exitCode: exitCode,
                             result: s.result,
                             stderrTail: Self.tail(of: s.stderr))
+                        out.sessionID = s.sessionID
+                        return out
                     }
                     guard let outcome else { return }
                     if let text = outcome.resultText { onEvent(.log(text)) }
@@ -115,7 +127,13 @@ struct ClaudeCodeDispatcher: Dispatcher {
                     let events: [ClaudeEvent] = state.withLock { s in
                         let parsed = chunk.isEmpty ? s.parser.finish() : s.parser.consume(chunk)
                         if chunk.isEmpty { s.stdoutDone = true }
-                        for case .result(let runResult) in parsed { s.result = runResult }
+                        for event in parsed {
+                            switch event {
+                            case .result(let runResult): s.result = runResult
+                            case .initialized(let sessionID, _): s.sessionID = sessionID
+                            default: break
+                            }
+                        }
                         return parsed
                     }
                     forward(events)
@@ -162,6 +180,41 @@ struct ClaudeCodeDispatcher: Dispatcher {
     }
 
     // MARK: - Pure logic (unit-tested)
+
+    /// Builds the claude argument list from the card's params. Absent params
+    /// fall back to the spec defaults; present-but-invalid ones fail loud.
+    static func arguments(prompt: String, params: [String: String]) throws -> [String] {
+        let modeRaw = params["permissionMode"]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let permissionMode = modeRaw.isEmpty ? defaultPermissionMode : modeRaw
+        guard permissionModes.contains(permissionMode) else {
+            throw DispatcherError.invalidParams(
+                "unknown permission mode: \(permissionMode) (allowed: \(permissionModes.joined(separator: ", ")))")
+        }
+        let turnsRaw = params["maxTurns"]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let maxTurns: Int
+        if turnsRaw.isEmpty {
+            maxTurns = defaultMaxTurns
+        } else if let parsed = Int(turnsRaw), maxTurnsRange.contains(parsed) {
+            maxTurns = parsed
+        } else {
+            throw DispatcherError.invalidParams(
+                "max turns must be a number from \(maxTurnsRange.lowerBound) to \(maxTurnsRange.upperBound), got: \(turnsRaw)")
+        }
+
+        var arguments = [
+            "-p", prompt,
+            "--output-format", "stream-json",
+            "--verbose",
+            "--permission-mode", permissionMode,
+            "--max-turns", String(maxTurns),
+        ]
+        if let resume = params["resumeSessionID"]?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !resume.isEmpty {
+            arguments += ["--resume", resume]
+        }
+        arguments += tokenizeFlags(params["extraFlags"] ?? "")
+        return arguments
+    }
 
     /// Success rule (verified against CLI 2.1.200): exit 0 AND a result event
     /// was seen AND is_error is false. Note subtype can be "success" while
@@ -219,6 +272,7 @@ private struct RunState: Sendable {
     var parser = StreamJSONParser()
     var stderr = Data()
     var result: ClaudeRunResult?
+    var sessionID: String?
     var stdoutDone = false
     var stderrDone = false
     var exitCode: Int?

@@ -281,14 +281,23 @@ private func parse(_ line: String) -> [ClaudeEvent] {
         #expect(ClaudeCodeDispatcher.tokenizeFlags("\t--verbose\n--bare ") == ["--verbose", "--bare"])
     }
 
-    @Test func declaresWorkingDirectoryAndExtraFlagsParams() {
+    @Test func declaresTheFiveParams() {
         let specs = ClaudeCodeDispatcher().paramSpecs
-        #expect(specs.count == 2)
-        #expect(specs[0].id == "workingDirectory")
+        #expect(specs.map(\.id) == [
+            "workingDirectory", "permissionMode", "maxTurns", "resumeSessionID", "extraFlags",
+        ])
         #expect(specs[0].required)
         if case .directory = specs[0].kind {} else { Issue.record("workingDirectory should be a directory param") }
-        #expect(specs[1].id == "extraFlags")
-        #expect(!specs[1].required)
+        // Only the working directory is required; everything else defaults.
+        #expect(specs.dropFirst().allSatisfy { !$0.required })
+        #expect(specs[1].defaultValue == "acceptEdits")
+        if case .choice(let options) = specs[1].kind {
+            #expect(options == ClaudeCodeDispatcher.permissionModes)
+        } else { Issue.record("permissionMode should be a choice param") }
+        #expect(specs[2].defaultValue == "25")
+        if case .integer(let range) = specs[2].kind {
+            #expect(range == ClaudeCodeDispatcher.maxTurnsRange)
+        } else { Issue.record("maxTurns should be an integer param") }
     }
 
     @Test func rejectsMissingWorkingDirectory() async {
@@ -452,5 +461,72 @@ private func parse(_ line: String) -> [ClaudeEvent] {
         #expect(registry.dispatcher(id: "claude-code") != nil)
         #expect(registry.dispatcher(id: "claude-code")?.displayName == "Claude Code")
         #expect(registry.dispatcher(id: "shell") == nil)
+    }
+}
+
+@Suite struct ClaudeArgumentBuilderTests {
+    @Test func defaultArgumentsMatchBaseline() throws {
+        let args = try ClaudeCodeDispatcher.arguments(prompt: "Do it.", params: [:])
+        #expect(args == [
+            "-p", "Do it.",
+            "--output-format", "stream-json",
+            "--verbose",
+            "--permission-mode", "acceptEdits",
+            "--max-turns", "25",
+        ])
+    }
+
+    @Test func resumeSessionAppendsResumeFlag() throws {
+        let args = try ClaudeCodeDispatcher.arguments(
+            prompt: "P", params: ["resumeSessionID": " abc-123 "])
+        let idx = try #require(args.firstIndex(of: "--resume"))
+        #expect(args[idx + 1] == "abc-123")
+    }
+
+    @Test func blankResumeSessionIsIgnored() throws {
+        let args = try ClaudeCodeDispatcher.arguments(
+            prompt: "P", params: ["resumeSessionID": "   "])
+        #expect(!args.contains("--resume"))
+    }
+
+    @Test func extraFlagsAppendAfterBuiltins() throws {
+        let args = try ClaudeCodeDispatcher.arguments(
+            prompt: "P", params: ["extraFlags": "--model sonnet"])
+        #expect(Array(args.suffix(2)) == ["--model", "sonnet"])
+    }
+}
+
+@Suite struct ClaudeRunSettingsTests {
+    @Test func overridesReplaceTheDefaults() throws {
+        let args = try ClaudeCodeDispatcher.arguments(
+            prompt: "P", params: ["permissionMode": "plan", "maxTurns": "5"])
+        let modeIdx = try #require(args.firstIndex(of: "--permission-mode"))
+        #expect(args[modeIdx + 1] == "plan")
+        let turnsIdx = try #require(args.firstIndex(of: "--max-turns"))
+        #expect(args[turnsIdx + 1] == "5")
+    }
+
+    @Test func absentOrBlankSettingsFallBackToDefaults() throws {
+        for params in [[String: String](), ["permissionMode": "", "maxTurns": "  "]] {
+            let args = try ClaudeCodeDispatcher.arguments(prompt: "P", params: params)
+            let modeIdx = try #require(args.firstIndex(of: "--permission-mode"))
+            #expect(args[modeIdx + 1] == "acceptEdits")
+            let turnsIdx = try #require(args.firstIndex(of: "--max-turns"))
+            #expect(args[turnsIdx + 1] == "25")
+        }
+    }
+
+    @Test func unknownPermissionModeFailsLoud() {
+        #expect(throws: DispatcherError.self) {
+            _ = try ClaudeCodeDispatcher.arguments(prompt: "P", params: ["permissionMode": "yolo"])
+        }
+    }
+
+    @Test func badMaxTurnsFailsLoud() {
+        for bad in ["abc", "0", "9999", "-3"] {
+            #expect(throws: DispatcherError.self) {
+                _ = try ClaudeCodeDispatcher.arguments(prompt: "P", params: ["maxTurns": bad])
+            }
+        }
     }
 }

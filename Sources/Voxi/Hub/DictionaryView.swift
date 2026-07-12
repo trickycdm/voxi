@@ -106,6 +106,9 @@ struct DictionaryView: View {
                 systemImage: "character.book.closed",
                 description: Text("Add names, acronyms, and jargon so they come out spelled right.")
             )
+            // Greedy frame so the enclosing VStack fills the detail pane:
+            // without it the whole stack hugs content and floats mid-window.
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             List(model.entries) { entry in
                 DictionaryRowView(entry: entry) {

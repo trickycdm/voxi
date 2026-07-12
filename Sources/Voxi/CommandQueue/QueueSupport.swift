@@ -7,6 +7,8 @@ enum QueueError: Error, LocalizedError, Equatable {
     case cardNotEditable(CardStatus)
     /// A dispatch is already in flight for this card.
     case alreadyDispatching(UUID)
+    /// Follow-up requested on a card whose run recorded no session id.
+    case noSessionToResume(UUID)
 
     var errorDescription: String? {
         switch self {
@@ -14,6 +16,8 @@ enum QueueError: Error, LocalizedError, Equatable {
             "Card is \(status.rawValue) and can no longer be edited."
         case .alreadyDispatching(let id):
             "Card \(id.uuidString) is already being dispatched."
+        case .noSessionToResume:
+            "This card's run did not record a session to resume."
         }
     }
 }
@@ -24,6 +28,8 @@ enum QueueError: Error, LocalizedError, Equatable {
 enum QueueParams {
     /// Well-known param key used by dispatchers that run in a directory.
     static let workingDirectoryKey = "workingDirectory"
+    /// Well-known param key: backend session a follow-up card resumes.
+    static let resumeSessionIDKey = "resumeSessionID"
 
     static func encode(_ params: [String: String]) throws -> String {
         let encoder = JSONEncoder()
@@ -62,19 +68,60 @@ enum RecentDirs {
 
 /// Pure UI-decision helpers, kept out of the views so they're unit-testable.
 enum QueueLogic {
-    /// Dispatch is only offered for queued cards whose required parameters
-    /// are all present and non-blank.
+    /// Dispatch is only offered for queued cards with a non-blank prompt
+    /// whose required parameters are all present and non-blank. (The prompt
+    /// rule also keeps a fresh follow-up card parked until it's written.)
     static func canDispatch(
         status: CardStatus,
+        prompt: String,
         params: [String: String],
         specs: [DispatcherParamSpec]
     ) -> Bool {
         guard status == .queued else { return false }
+        guard !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
         return specs.allSatisfy { spec in
             guard spec.required else { return true }
             let value = params[spec.id] ?? ""
             return !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
+    }
+
+    /// IDs a "Run All" should dispatch: queued cards that pass the dispatch
+    /// gate, oldest first. Cards that fail the gate (blank prompt, missing
+    /// params, unknown dispatcher) are skipped — left queued, never failed.
+    static func drainOrder(
+        cards: [ActionCard],
+        specsFor: (String) -> [DispatcherParamSpec]?
+    ) -> [UUID] {
+        cards
+            .filter { $0.status == .queued }
+            .sorted { $0.createdAt < $1.createdAt }
+            .filter { card in
+                guard let specs = specsFor(card.dispatcherID) else { return false }
+                let params = (try? QueueParams.decode(card.paramsJSON)) ?? [:]
+                return canDispatch(status: card.status, prompt: card.prompt, params: params, specs: specs)
+            }
+            .map(\.id)
+    }
+
+    /// Digit-filter + clamp for integer param fields: non-numeric input
+    /// becomes empty (falls back to the spec default at dispatch), numbers
+    /// clamp into the spec's range.
+    static func sanitizedIntegerInput(_ raw: String, range: ClosedRange<Int>) -> String {
+        let digits = raw.filter(\.isNumber)
+        guard let value = Int(digits) else { return "" }
+        return String(min(max(value, range.lowerBound), range.upperBound))
+    }
+
+    /// Which log a card view should show: while in flight, the runner's
+    /// immediate live tail beats the flush-throttled persisted log; once
+    /// terminal (or still queued) the persisted log is the complete record.
+    /// Single source of truth for CardDetailView and the full log viewer.
+    static func displayLog(status: CardStatus, liveTail: String?, persistedLog: String) -> String {
+        if status == .dispatched || status == .running, let liveTail {
+            return liveTail
+        }
+        return persistedLog
     }
 
     /// Badge text for the raw-transcript disclosure — the spec requires the

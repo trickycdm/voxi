@@ -13,6 +13,9 @@ struct DispatchResult: Sendable {
     var exitCode: Int?
     /// Final summary line for the card (e.g. claude's result text or an error).
     var resultText: String?
+    /// Backend session identifier, when the dispatcher exposes one (claude's
+    /// session_id) — persisted on the card so a follow-up can resume it.
+    var sessionID: String? = nil
 }
 
 /// One parameter a dispatcher accepts, for generic parameter UI.
@@ -20,12 +23,26 @@ struct DispatcherParamSpec: Identifiable, Sendable {
     enum Kind: Sendable {
         case directory      // rendered as a directory picker with recents
         case string
+        case choice(options: [String])          // rendered as a menu picker
+        case integer(range: ClosedRange<Int>)   // digit field, clamped to range
     }
     /// Key in the card's params JSON object.
     let id: String
     let label: String
     let kind: Kind
     let required: Bool
+    /// Used by the UI and the dispatcher when the card carries no value.
+    /// Defaults stay out of the stored params so later default changes apply
+    /// to every not-yet-dispatched card.
+    let defaultValue: String?
+
+    init(id: String, label: String, kind: Kind, required: Bool, defaultValue: String? = nil) {
+        self.id = id
+        self.label = label
+        self.kind = kind
+        self.required = required
+        self.defaultValue = defaultValue
+    }
 }
 
 enum DispatcherError: Error, LocalizedError {

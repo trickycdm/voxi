@@ -72,7 +72,10 @@ final class AudioCapture {
             throw AudioCaptureError.noInputAvailable
         }
 
-        input.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
+        // @Sendable keeps the tap closure nonisolated; without it the closure
+        // inherits @MainActor from this class and traps when AVFAudio invokes
+        // it on its realtime messenger queue.
+        input.installTap(onBus: 0, bufferSize: 1024, format: format) { @Sendable buffer, _ in
             session.ingest(buffer)
         }
         engine.prepare()
@@ -148,7 +151,7 @@ final class AudioCapture {
             return
         }
         session.switchInputFormat(format)
-        input.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
+        input.installTap(onBus: 0, bufferSize: 1024, format: format) { @Sendable buffer, _ in
             session.ingest(buffer)
         }
         engine.prepare()

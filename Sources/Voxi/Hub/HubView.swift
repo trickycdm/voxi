@@ -9,7 +9,10 @@ struct HubView: View {
         case dictionary
         case settings
 
-        var id: String { rawValue }
+        // Identity must be Self, not String: List's implicit row tags come from
+        // `id`, and they must match the `HubSection?` selection binding or
+        // sidebar clicks are silently dropped.
+        var id: Self { self }
 
         var title: String {
             switch self {

@@ -47,6 +47,7 @@ struct CardStore: Sendable {
                 card.finishedAt = nil
                 card.exitCode = nil
                 card.log = ""
+                card.sessionID = nil
             case .running:
                 break
             }

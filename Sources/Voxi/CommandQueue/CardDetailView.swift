@@ -8,6 +8,8 @@ struct CardDetailView: View {
     let model: QueueModel
     let runner: QueueRunner
     let resolver: any DispatcherResolving
+    /// Opens the card's full log window (threaded down from AppState).
+    var openLog: ((ActionCard) -> Void)? = nil
 
     @State private var promptDraft = ""
     @State private var params: [String: String] = [:]
@@ -24,19 +26,16 @@ struct CardDetailView: View {
     }
 
     private var canDispatch: Bool {
-        QueueLogic.canDispatch(status: card.status, params: params, specs: paramSpecs)
+        QueueLogic.canDispatch(status: card.status, prompt: promptDraft, params: params, specs: paramSpecs)
             && dispatcher != nil
             && !runner.isActive(card.id)
     }
 
-    /// While in flight, the runner's live tail beats the flush-throttled DB
-    /// log; once terminal (or still queued), the persisted log is complete.
     private var displayLog: String {
-        if card.status == .dispatched || card.status == .running,
-           let tail = runner.liveRuns[card.id]?.logTail {
-            return tail
-        }
-        return card.log
+        QueueLogic.displayLog(
+            status: card.status,
+            liveTail: runner.liveRuns[card.id]?.logTail,
+            persistedLog: card.log)
     }
 
     private var resultSummary: String? {
@@ -135,6 +134,19 @@ struct CardDetailView: View {
                 TextField(spec.label, text: paramBinding(spec.id))
                     .textFieldStyle(.roundedBorder)
                     .disabled(!isEditable)
+            case .choice(let options):
+                Picker(spec.label, selection: defaultedBinding(spec)) {
+                    ForEach(options, id: \.self) { Text($0).tag($0) }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .fixedSize()
+                .disabled(!isEditable)
+            case .integer(let range):
+                TextField(spec.defaultValue ?? "", text: integerBinding(spec, range: range))
+                    .textFieldStyle(.roundedBorder)
+                    .frame(maxWidth: 120)
+                    .disabled(!isEditable)
             }
         }
     }
@@ -171,6 +183,22 @@ struct CardDetailView: View {
         Binding(
             get: { params[key] ?? "" },
             set: { setParam(key, to: $0) }
+        )
+    }
+
+    /// Reads through to the spec default so pickers preselect it; an explicit
+    /// selection then writes the value to the card.
+    private func defaultedBinding(_ spec: DispatcherParamSpec) -> Binding<String> {
+        Binding(
+            get: { params[spec.id] ?? spec.defaultValue ?? "" },
+            set: { setParam(spec.id, to: $0) }
+        )
+    }
+
+    private func integerBinding(_ spec: DispatcherParamSpec, range: ClosedRange<Int>) -> Binding<String> {
+        Binding(
+            get: { params[spec.id] ?? spec.defaultValue ?? "" },
+            set: { setParam(spec.id, to: QueueLogic.sanitizedIntegerInput($0, range: range)) }
         )
     }
 
@@ -220,6 +248,12 @@ struct CardDetailView: View {
                     Task { await save { try await model.retry(id: card.id) } }
                 }
             }
+            if card.status.isTerminal, card.sessionID != nil {
+                Button("Follow up") {
+                    Task { await save { try await model.followUp(from: card) } }
+                }
+                .help("New card that resumes this run's session")
+            }
             Spacer()
             if card.status != .dispatched && card.status != .running {
                 Button("Delete", role: .destructive) {
@@ -241,6 +275,23 @@ struct CardDetailView: View {
     // MARK: Log
 
     private var logSection: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text("Log")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                if let openLog {
+                    Button("Open Full Log") { openLog(card) }
+                        .buttonStyle(.link)
+                        .font(.caption)
+                }
+            }
+            logScroll
+        }
+    }
+
+    private var logScroll: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 Text(displayLog)

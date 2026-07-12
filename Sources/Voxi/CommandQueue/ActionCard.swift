@@ -46,6 +46,9 @@ struct ActionCard: Identifiable, Codable, Equatable, Sendable {
     var exitCode: Int?
     var dispatchedAt: Date?
     var finishedAt: Date?
+    /// Backend session id from the last run (claude session_id); set when
+    /// the run finishes, cleared on retry. Enables "Follow up" resumes.
+    var sessionID: String?
 
     init(
         id: UUID = UUID(),

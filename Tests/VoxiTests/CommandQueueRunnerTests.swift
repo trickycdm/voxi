@@ -347,3 +347,165 @@ private struct Harness {
         #expect(try await harness.card(card.id).status == .queued)
     }
 }
+
+// MARK: - onRunFinished hook
+
+/// Captures onRunFinished payloads; tests run on the MainActor, matching
+/// the hook's isolation.
+@MainActor
+private final class FinishRecorder {
+    private(set) var payloads: [(cardID: UUID, success: Bool, resultText: String?)] = []
+    func install(on runner: QueueRunner) {
+        runner.onRunFinished = { [weak self] id, success, text in
+            self?.payloads.append((id, success, text))
+        }
+    }
+}
+
+@MainActor
+@Suite struct QueueRunnerFinishHookTests {
+    @Test func firesOnceWithResultOnSuccess() async throws {
+        let harness = try Harness(script: .finish(
+            events: [.log("working")],
+            result: DispatchResult(success: true, exitCode: 0, resultText: "All done.")
+        ))
+        let recorder = FinishRecorder()
+        recorder.install(on: harness.runner)
+        let card = try await harness.insertCard()
+
+        try await harness.runner.dispatch(cardID: card.id)
+        await harness.runner.awaitCompletion(cardID: card.id)
+
+        #expect(recorder.payloads.count == 1)
+        #expect(recorder.payloads.first?.cardID == card.id)
+        #expect(recorder.payloads.first?.success == true)
+        #expect(recorder.payloads.first?.resultText == "All done.")
+        // Fired after the terminal DB write.
+        #expect(try await harness.card(card.id).status == .succeeded)
+    }
+
+    @Test func firesWithFailureOnFailedRun() async throws {
+        let harness = try Harness(script: .finish(
+            events: [],
+            result: DispatchResult(success: false, exitCode: 1, resultText: "It broke.")
+        ))
+        let recorder = FinishRecorder()
+        recorder.install(on: harness.runner)
+        let card = try await harness.insertCard()
+
+        try await harness.runner.dispatch(cardID: card.id)
+        await harness.runner.awaitCompletion(cardID: card.id)
+
+        #expect(recorder.payloads.count == 1)
+        #expect(recorder.payloads.first?.success == false)
+        #expect(recorder.payloads.first?.resultText == "It broke.")
+    }
+
+    @Test func firesWithFailureOnCancel() async throws {
+        let harness = try Harness(script: .neverEnding(events: [.log("spinning")]))
+        let recorder = FinishRecorder()
+        recorder.install(on: harness.runner)
+        let card = try await harness.insertCard()
+
+        try await harness.runner.dispatch(cardID: card.id)
+        try await harness.waitForStatus(card.id, .running)
+        harness.runner.cancel(cardID: card.id)
+        await harness.runner.awaitCompletion(cardID: card.id)
+
+        #expect(recorder.payloads.count == 1)
+        #expect(recorder.payloads.first?.success == false)
+        #expect(recorder.payloads.first?.resultText == "Cancelled by user")
+    }
+
+    @Test func firesWithFailureOnSpawnFailure() async throws {
+        let harness = try Harness(script: .finish(
+            events: [],
+            result: DispatchResult(success: true, exitCode: 0, resultText: nil)
+        ))
+        let recorder = FinishRecorder()
+        recorder.install(on: harness.runner)
+        // Unknown dispatcher id → failBeforeRun path.
+        let card = try await harness.insertCard(dispatcherID: "no-such-dispatcher")
+
+        try await harness.runner.dispatch(cardID: card.id)
+        await harness.runner.awaitCompletion(cardID: card.id)
+
+        #expect(recorder.payloads.count == 1)
+        #expect(recorder.payloads.first?.success == false)
+        #expect(recorder.payloads.first?.resultText?.contains("Unknown dispatcher") == true)
+        #expect(try await harness.card(card.id).status == .failed)
+    }
+}
+
+@MainActor
+@Suite struct QueueRunnerSessionIDTests {
+    @Test func sessionIDFromResultIsPersistedOnFinish() async throws {
+        let harness = try Harness(script: .finish(
+            events: [],
+            result: DispatchResult(success: true, exitCode: 0, resultText: "ok", sessionID: "sess-9")
+        ))
+        let card = try await harness.insertCard()
+
+        try await harness.runner.dispatch(cardID: card.id)
+        await harness.runner.awaitCompletion(cardID: card.id)
+
+        let finished = try await harness.card(card.id)
+        #expect(finished.status == .succeeded)
+        #expect(finished.sessionID == "sess-9")
+    }
+}
+
+// MARK: - Run All
+
+@MainActor
+@Suite struct QueueRunnerDrainTests {
+    @Test func drainsSequentiallyOldestFirstAndContinuesPastFailure() async throws {
+        // The fake finishes instantly; sequence order is proven by the
+        // finish-hook order matching creation order, and by never observing
+        // two active handles (checked via isActive during the hook).
+        let harness = try Harness(script: .finish(
+            events: [],
+            result: DispatchResult(success: false, exitCode: 1, resultText: "boom")
+        ))
+        let recorder = FinishRecorder()
+        recorder.install(on: harness.runner)
+
+        var created: [UUID] = []
+        for _ in 0..<3 {
+            let card = try await harness.insertCard()
+            created.append(card.id)
+            // Distinct createdAt ordering.
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        // A draft card with no working directory must be skipped, not failed.
+        let draft = try await harness.insertCard(paramsJSON: "{}")
+
+        await harness.runner.runAll()
+
+        #expect(recorder.payloads.map(\.cardID) == created)
+        for id in created {
+            #expect(try await harness.card(id).status == .failed)  // continue-on-failure ran all three
+        }
+        #expect(try await harness.card(draft.id).status == .queued)
+        #expect(harness.runner.drainRemaining == nil)
+    }
+
+    @Test func stopCancelsCurrentAndLeavesRestQueued() async throws {
+        let harness = try Harness(script: .neverEnding(events: [.log("spinning")]))
+        let first = try await harness.insertCard()
+        try await Task.sleep(for: .milliseconds(5))
+        let second = try await harness.insertCard()
+
+        let drain = Task { await harness.runner.runAll() }
+        // Wait until the first card is actually running.
+        try await harness.waitForStatus(first.id, .running)
+        #expect(harness.runner.isDraining)
+
+        harness.runner.stopDrain()
+        await drain.value
+
+        #expect(try await harness.card(first.id).status == .failed)   // cancelled in flight
+        #expect(try await harness.card(second.id).status == .queued)  // never started
+        #expect(harness.runner.drainRemaining == nil)
+    }
+}

@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="280" viewBox="0 0 1200 280" role="img" aria-label="Voxi: local-first dictation for macOS">
+  <defs>
+    <linearGradient id="field" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#013E37"/>
+      <stop offset="1" stop-color="#06251F"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="1200" height="280" rx="24" fill="url(#field)"/>
+  <!-- coachline -->
+  <rect x="10" y="10" width="1180" height="260" rx="17" fill="none" stroke="#FFEFB3" stroke-opacity="0.35" stroke-width="1.5"/>
+
+  <!-- waveform mark -->
+  <g fill="#FFEFB3">
+    <rect x="452" y="96"  width="9" height="28" rx="4.5"/>
+    <rect x="472" y="80"  width="9" height="60" rx="4.5"/>
+    <rect x="492" y="64"  width="9" height="92" rx="4.5"/>
+    <rect x="512" y="84"  width="9" height="52" rx="4.5"/>
+    <rect x="532" y="98"  width="9" height="24" rx="4.5"/>
+  </g>
+
+  <!-- wordmark -->
+  <text x="568" y="126" fill="#FFEFB3"
+        font-family="Avenir Next, Futura, 'Segoe UI', system-ui, sans-serif"
+        font-size="64" font-weight="700" letter-spacing="14">VOXI</text>
+
+  <!-- tagline -->
+  <text x="600" y="188" text-anchor="middle" fill="#A8BDB2"
+        font-family="Avenir Next, 'Segoe UI', system-ui, sans-serif"
+        font-size="21" letter-spacing="1">Local-first dictation for macOS. Hold a key, speak, release.</text>
+  <text x="600" y="222" text-anchor="middle" fill="#6E877E"
+        font-family="Avenir Next, 'Segoe UI', system-ui, sans-serif"
+        font-size="15" letter-spacing="2">ON-DEVICE ASR · VOICE LANE INTO CLAUDE CODE · NO TELEMETRY</text>
+</svg>

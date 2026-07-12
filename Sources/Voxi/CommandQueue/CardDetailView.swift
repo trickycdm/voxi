@@ -64,7 +64,7 @@ struct CardDetailView: View {
             if let lastError {
                 Text(lastError)
                     .font(.caption)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(Color.voxiDanger)
             }
             if !displayLog.isEmpty {
                 logSection
@@ -100,8 +100,8 @@ struct CardDetailView: View {
                 .disabled(!isEditable)
                 .foregroundStyle(isEditable ? .primary : .secondary)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 6)
-                        .strokeBorder(.separator)
+                    RoundedRectangle(cornerRadius: Theme.Radius.control)
+                        .strokeBorder(Color.voxiHairline)
                 )
                 .onChange(of: promptDraft) {
                     guard isEditable, promptDraft != card.prompt else { return }
@@ -304,7 +304,9 @@ struct CardDetailView: View {
                     .id("logEnd")
             }
             .frame(height: 160)
-            .background(.black.opacity(0.05), in: RoundedRectangle(cornerRadius: 6))
+            // VoxiInset adapts per appearance — the old .black.opacity(0.05)
+            // was invisible against dark backgrounds.
+            .background(Color.voxiInset, in: RoundedRectangle(cornerRadius: Theme.Radius.control))
             .onChange(of: displayLog) {
                 proxy.scrollTo("logEnd", anchor: .bottom)
             }
@@ -333,10 +335,10 @@ struct CardDetailView: View {
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
                     .background(
-                        (card.refinedByLLM ? Color.purple : Color.gray).opacity(0.15),
+                        (card.refinedByLLM ? Color.accentColor : Color.voxiInk3).opacity(0.15),
                         in: Capsule()
                     )
-                    .foregroundStyle(card.refinedByLLM ? Color.purple : Color.secondary)
+                    .foregroundStyle(card.refinedByLLM ? Color.accentColor : Color.voxiInk2)
             }
         }
     }

@@ -17,6 +17,7 @@ Sources/Voxi/
   Refinement/     — Refiner protocol; RefinerChain falls back LLM → rules on any error
   Insertion/      — 3-tier text insertion (AX → pasteboard → AppleScript opt-in)
   Pill/           — floating non-activating status panel; pure PillTimingPolicy
+  DesignSystem/   — "Racing Green & Cream" tokens: Theme.swift (colors/radii/spacing), brand views
   CommandQueue/   — ActionCard lifecycle, QueueRunner, queue UI
   Dispatchers/    — Dispatcher protocol + registry; claude-code executor, stream-json parsing
   Persistence/    — GRDB: history (+FTS5), dictionary, actionCard; append-only migrations
@@ -64,6 +65,7 @@ Cross-cutting standards live in [`/steering`](steering) and are the authority fo
 
 - [`steering/CODING_CONVENTIONS.md`](steering/CODING_CONVENTIONS.md) — module structure, extension-point rule, error enums, logging + privacy, style, dependency hygiene.
 - [`steering/CONCURRENCY.md`](steering/CONCURRENCY.md) — Swift 6 strict-concurrency playbook; **read before touching any framework callback** (a missing `@Sendable` crashed the app).
+- [`steering/DESIGN_SYSTEM.md`](steering/DESIGN_SYSTEM.md) — "Racing Green & Cream" tokens and rules; **read before touching any UI color, radius, or spacing** — new UI color = token, never a literal.
 - [`steering/MACOS_PLATFORM.md`](steering/MACOS_PLATFORM.md) — windows/panels, event tap, TCC, realtime audio, subprocess contracts.
 - [`steering/PERSISTENCE.md`](steering/PERSISTENCE.md) — GRDB rules, append-only migrations, conformances, FTS5.
 - [`steering/TESTING_AND_VERIFICATION.md`](steering/TESTING_AND_VERIFICATION.md) — pure-logic-extraction rule, when-to-test table, verify-before-done gate.

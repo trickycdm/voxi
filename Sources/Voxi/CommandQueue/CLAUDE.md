@@ -29,3 +29,4 @@
 - Different cards run concurrently by design; only same-card double-dispatch is guarded.
 - One reusable queue window for the app lifetime (`QueueWindowController`) — shown/hidden, never recreated; the queue UI lives in an `NSHostingView`, so `@Environment(\.openWindow)` is unavailable inside it.
 - `paramsJSON` is a dispatcher-defined `[String: String]` blob — the queue treats it as opaque; interpret keys only in the owning dispatcher.
+- Chip styling is token-driven (`CardStatus.chipBackground/.chipForeground`, unit-tested) per `steering/DESIGN_SYSTEM.md` — don't reintroduce named SwiftUI colors.

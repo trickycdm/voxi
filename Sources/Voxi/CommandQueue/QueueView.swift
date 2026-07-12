@@ -7,13 +7,25 @@ extension CardStatus {
         rawValue.capitalized
     }
 
-    var chipColor: Color {
+    /// Chip fill from the token layer (steering/DESIGN_SYSTEM.md). Status
+    /// colors appear only on status UI; alpha is baked into the color sets.
+    var chipBackground: Color {
         switch self {
-        case .queued: .gray
-        case .dispatched: .orange
-        case .running: .blue
-        case .succeeded: .green
-        case .failed: .red
+        case .queued: .voxiStatusQueuedBg
+        case .dispatched: .voxiStatusDispatchedBg
+        case .running: .voxiStatusRunningBg
+        case .succeeded: .voxiStatusSucceededBg
+        case .failed: .voxiStatusFailedBg
+        }
+    }
+
+    var chipForeground: Color {
+        switch self {
+        case .queued: .voxiInk2
+        case .dispatched: .voxiStatusDispatchedText
+        case .running: .accentColor
+        case .succeeded: .voxiSuccess
+        case .failed: .voxiDanger
         }
     }
 
@@ -41,15 +53,16 @@ struct QueueView: View {
     var body: some View {
         VStack(spacing: 0) {
             headerBar
-            Divider()
+            Rectangle().fill(Color.voxiHairline).frame(height: 1)
             if model.cards.isEmpty {
                 emptyState
             } else {
                 ScrollView {
-                    LazyVStack(spacing: 8) {
-                        ForEach(model.cards) { card in
+                    LazyVStack(spacing: Theme.Space.sm) {
+                        ForEach(Array(model.cards.enumerated()), id: \.element.id) { index, card in
                             CardView(
                                 card: card,
+                                number: index + 1,
                                 isExpanded: expandedCardID == card.id,
                                 onToggleExpanded: {
                                     expandedCardID = expandedCardID == card.id ? nil : card.id
@@ -61,10 +74,11 @@ struct QueueView: View {
                             )
                         }
                     }
-                    .padding(12)
+                    .padding(Theme.Space.md)
                 }
             }
         }
+        .background(Color.voxiPaper)
         .frame(minWidth: 440, minHeight: 320)
         .task { model.startObserving() }
     }
@@ -76,7 +90,7 @@ struct QueueView: View {
                     .controlSize(.small)
                 Text("Running queue…")
                     .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.voxiInk2)
             }
             Spacer()
             if runner.isDraining {
@@ -99,12 +113,13 @@ struct QueueView: View {
         VStack(spacing: 8) {
             Image(systemName: "tray")
                 .font(.system(size: 32))
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(Color.voxiInk3)
             Text("No commands queued")
                 .font(.headline)
+                .foregroundStyle(Color.voxiInk)
             Text("Hold the command hotkey and dictate a task — it lands here as a card you can review and dispatch.")
                 .font(.callout)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.voxiInk2)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 320)
         }
@@ -117,6 +132,8 @@ struct QueueView: View {
 
 struct CardView: View {
     let card: ActionCard
+    /// 1-based display position — the racing number on the card's disc.
+    let number: Int
     let isExpanded: Bool
     let onToggleExpanded: () -> Void
     let model: QueueModel
@@ -136,27 +153,30 @@ struct CardView: View {
                 .contentShape(Rectangle())
                 .onTapGesture(perform: onToggleExpanded)
             if isExpanded {
-                Divider()
-                    .padding(.horizontal, 12)
+                Rectangle().fill(Color.voxiHairline).frame(height: 1)
+                    .padding(.horizontal, Theme.Space.md)
                 CardDetailView(card: card, model: model, runner: runner, resolver: resolver, openLog: openLog)
-                    .padding(12)
+                    .padding(Theme.Space.md)
             }
         }
-        .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 8))
+        .background(Color.voxiCard, in: RoundedRectangle(cornerRadius: Theme.Radius.card))
+        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card).strokeBorder(Color.voxiHairline, lineWidth: 1))
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .firstTextBaseline) {
+            HStack {
+                RacingNumberDisc(number: number)
                 Text(card.title)
                     .font(.headline)
+                    .foregroundStyle(Color.voxiInk)
                     .lineLimit(1)
                 Spacer()
                 StatusChip(status: card.status)
             }
             Text(card.summary)
                 .font(.callout)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.voxiInk2)
                 .lineLimit(2)
             HStack(spacing: 6) {
                 Text(card.createdAt, style: .relative)
@@ -176,12 +196,12 @@ struct CardView: View {
                 Spacer()
                 Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
                     .imageScale(.small)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(Color.voxiInk3)
             }
             .font(.caption)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(Color.voxiInk2)
         }
-        .padding(12)
+        .padding(Theme.Space.md)
     }
 }
 
@@ -191,15 +211,16 @@ struct StatusChip: View {
     var body: some View {
         HStack(spacing: 4) {
             if status.showsSpinner {
-                ProgressView()
-                    .controlSize(.mini)
+                Image(systemName: "circle.fill")
+                    .font(.system(size: 5))
+                    .symbolEffect(.pulse, options: .repeating)
             }
             Text(status.chipLabel)
                 .font(.caption.weight(.medium))
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 3)
-        .background(status.chipColor.opacity(0.18), in: Capsule())
-        .foregroundStyle(status.chipColor)
+        .background(status.chipBackground, in: Capsule())
+        .foregroundStyle(status.chipForeground)
     }
 }

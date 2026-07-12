@@ -72,7 +72,7 @@ struct CardDetailView: View {
             if let resultSummary {
                 Label(resultSummary, systemImage: card.status == .succeeded ? "checkmark.circle" : "xmark.circle")
                     .font(.callout.weight(.medium))
-                    .foregroundStyle(card.status.chipColor)
+                    .foregroundStyle(card.status.chipForeground)
             }
             transcriptSection
         }

@@ -54,6 +54,11 @@ final class QueueWindowController {
         // The controller reuses one window for the app's lifetime; closing
         // must hide, not deallocate.
         window.isReleasedWhenClosed = false
+        // Paper runs edge-to-edge behind a transparent titlebar
+        // (steering/DESIGN_SYSTEM.md: separation by tonal steps, not chrome).
+        window.styleMask.insert(.fullSizeContentView)
+        window.titlebarAppearsTransparent = true
+        window.backgroundColor = .voxiPaper
         window.center()
         window.setFrameAutosaveName("VoxiQueueWindow")
         window.contentView = NSHostingView(

@@ -215,11 +215,19 @@ private func makeModel() throws -> (QueueModel, CardStore) {
     }
 
     @Test func statusChipMapping() {
-        #expect(CardStatus.queued.chipColor == .gray)
-        #expect(CardStatus.dispatched.chipColor == .orange)
-        #expect(CardStatus.running.chipColor == .blue)
-        #expect(CardStatus.succeeded.chipColor == .green)
-        #expect(CardStatus.failed.chipColor == .red)
+        // Fills come from the status token layer (steering/DESIGN_SYSTEM.md)…
+        #expect(CardStatus.queued.chipBackground == Color("VoxiStatusQueuedBg"))
+        #expect(CardStatus.dispatched.chipBackground == Color("VoxiStatusDispatchedBg"))
+        #expect(CardStatus.running.chipBackground == Color("VoxiStatusRunningBg"))
+        #expect(CardStatus.succeeded.chipBackground == Color("VoxiStatusSucceededBg"))
+        #expect(CardStatus.failed.chipBackground == Color("VoxiStatusFailedBg"))
+        // …and every status pairs a distinct background with its foreground.
+        #expect(CardStatus.queued.chipForeground == .voxiInk2)
+        #expect(CardStatus.dispatched.chipForeground == .voxiStatusDispatchedText)
+        #expect(CardStatus.running.chipForeground == .accentColor)
+        #expect(CardStatus.succeeded.chipForeground == .voxiSuccess)
+        #expect(CardStatus.failed.chipForeground == .voxiDanger)
+        #expect(Set(CardStatus.allCases.map(\.chipBackground)).count == CardStatus.allCases.count)
         #expect(CardStatus.running.showsSpinner)
         for status in CardStatus.allCases where status != .running {
             #expect(!status.showsSpinner)

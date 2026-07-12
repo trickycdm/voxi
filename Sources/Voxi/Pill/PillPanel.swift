@@ -40,6 +40,12 @@ final class PillPanel: NSPanel {
         hasShadow = true
         isMovableByWindowBackground = false
 
+        // The pill floats over other apps' windows, so it never inherits the
+        // system appearance: it is always "Night Race" (steering/DESIGN_SYSTEM.md).
+        // Pinning darkAqua makes every adaptive token inside resolve to its
+        // dark variant in both system appearances.
+        appearance = NSAppearance(named: .darkAqua)
+
         let hosting = NSHostingView(rootView: content)
         // macOS 13+: SwiftUI's intrinsic content size drives the panel size.
         hosting.sizingOptions = [.preferredContentSize]

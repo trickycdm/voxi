@@ -9,8 +9,11 @@ struct PillView: View {
             .frame(minHeight: 22)
             .padding(.horizontal, 16)
             .padding(.vertical, 9)
-            .background(.regularMaterial, in: Capsule())
-            .overlay(Capsule().strokeBorder(.quaternary, lineWidth: 0.5))
+            .background(Color.voxiCard, in: Capsule())
+            .overlay(Capsule().strokeBorder(Color.voxiHairline, lineWidth: 1))
+            // Coachline: the pill's one ornament — a cream keyline inset just
+            // inside the edge, like hand-painted bodywork. Pill only.
+            .overlay(Capsule().strokeBorder(Color.voxiCoachline, lineWidth: 1).padding(3))
             .fixedSize()  // intrinsic size → panel sizes itself via sizingOptions
             .padding(6)   // room for the panel shadow
     }
@@ -21,16 +24,24 @@ struct PillView: View {
         case .idle:
             Image(systemName: "waveform")
                 .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(Color.voxiInk3)
+                .symbolEffect(.variableColor.iterative.dimInactiveLayers,
+                              options: .repeating.speed(0.4))
 
         case .recording(let mode, _):
             HStack(spacing: 12) {
                 affordance("xmark", help: "Cancel dictation") {
                     controller.onCancel?()
                 }
-                WaveformBars(level: { controller.level }, isActive: true)
-                    .foregroundStyle(tint(for: mode))
-                    .frame(width: 84, height: 20)
+                HStack(spacing: 8) {
+                    Image(systemName: "circle.fill")
+                        .font(.system(size: 6))
+                        .foregroundStyle(tint(for: mode))
+                        .symbolEffect(.pulse, options: .repeating)
+                    WaveformBars(level: { controller.level }, isActive: true)
+                        .foregroundStyle(tint(for: mode))
+                        .frame(width: 84, height: 20)
+                }
                 affordance("checkmark", help: "Finish dictation") {
                     controller.onDone?()
                 }
@@ -38,29 +49,33 @@ struct PillView: View {
 
         case .processing:
             HStack(spacing: 8) {
-                ProgressView()
-                    .controlSize(.small)
+                Image(systemName: "waveform")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Color.voxiInk2)
+                    .symbolEffect(.variableColor.iterative, options: .repeating)
                 Text("Working…")
                     .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.voxiInk2)
             }
 
         case .notice(let message):
             HStack(spacing: 6) {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.yellow)
+                    .foregroundStyle(Color.voxiWarning)
                 Text(message)
                     .font(.callout)
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(Color.voxiInk)
                     .lineLimit(1)
             }
         }
     }
 
+    /// Waveform + dot tint. Butter is the live dictation color; command mode
+    /// reads as mint (the dark-resolved VoxiSuccess — the panel pins darkAqua).
     private func tint(for mode: PillState.RecordingMode) -> Color {
         switch mode {
-        case .dictation: .accentColor
-        case .command: .purple
+        case .dictation: .voxiLive
+        case .command: .voxiCommandTint
         }
     }
 
@@ -68,9 +83,9 @@ struct PillView: View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.voxiInk2)
                 .frame(width: 20, height: 20)
-                .background(.quaternary, in: Circle())
+                .background(Color.voxiInset, in: Circle())
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)

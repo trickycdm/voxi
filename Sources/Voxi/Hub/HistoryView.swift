@@ -133,14 +133,33 @@ struct HistoryView: View {
         Group {
             if model.displayed.isEmpty {
                 emptyState
-            } else {
+            } else if case .search = model.mode {
+                // FTS results are relevance-ranked — day sections would
+                // interleave, so search stays a flat list.
                 List(model.displayed, selection: $selectionID) { entry in
                     HistoryRowView(entry: entry)
                         .tag(entry.id)
                 }
                 .listStyle(.inset)
+                .scrollContentBackground(.hidden)
+            } else {
+                List(selection: $selectionID) {
+                    ForEach(HistoryDayGrouping.sections(model.displayed), id: \.title) { section in
+                        Section {
+                            ForEach(section.entries) { entry in
+                                HistoryRowView(entry: entry)
+                                    .tag(entry.id)
+                            }
+                        } header: {
+                            Text(section.title).voxiPlaque()
+                        }
+                    }
+                }
+                .listStyle(.inset)
+                .scrollContentBackground(.hidden)
             }
         }
+        .background(Color.voxiPaper)
     }
 
     @ViewBuilder
@@ -166,8 +185,8 @@ struct HistoryView: View {
         } else {
             ContentUnavailableView(
                 "No Selection",
-                systemImage: "text.magnifyingglass",
-                description: Text("Select a dictation to see its details.")
+                systemImage: "waveform",
+                description: Text("Select a dictation to read it in full.")
             )
         }
     }
@@ -176,36 +195,54 @@ struct HistoryView: View {
 struct HistoryRowView: View {
     let entry: HistoryEntry
 
+    // Rows keep the system text hierarchy (.primary/.secondary) rather than
+    // ink tokens: List flips these automatically when the row is selected,
+    // and fixed ink-on-accent would be unreadable in light mode.
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(entry.finalText)
-                .lineLimit(2)
-            HStack(spacing: 6) {
-                if let bundleID = entry.targetAppBundleID {
-                    if let info = TargetAppInfo.lookup(bundleID: bundleID) {
-                        Image(nsImage: info.icon)
-                            .resizable()
-                            .frame(width: 14, height: 14)
-                        Text(info.name)
-                    } else {
-                        Text(bundleID)
-                    }
-                } else {
-                    Image(systemName: "bolt.badge.clock")
-                    Text("Command")
+        HStack(alignment: .top, spacing: 10) {
+            kindBadge
+            VStack(alignment: .leading, spacing: 4) {
+                Text(entry.finalText)
+                    .lineLimit(2)
+                HStack(spacing: 6) {
+                    Text(appName)
+                    Text(entry.engineID)
+                        .font(.caption2)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(.quaternary.opacity(0.6), in: Capsule())
+                    Spacer()
+                    Text(entry.createdAt, format: .relative(presentation: .named))
+                        .monospacedDigit()
+                        .foregroundStyle(.tertiary)
                 }
-                Text(entry.engineID)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 1)
-                    .background(.quaternary, in: Capsule())
-                Spacer()
-                Text(entry.createdAt, format: .relative(presentation: .named))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
             }
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .lineLimit(1)
         }
-        .padding(.vertical, 3)
+        .padding(.vertical, 5)
+    }
+
+    private var appName: String {
+        guard let bundleID = entry.targetAppBundleID else { return "Command" }
+        return TargetAppInfo.lookup(bundleID: bundleID)?.name ?? bundleID
+    }
+
+    @ViewBuilder
+    private var kindBadge: some View {
+        if let bundleID = entry.targetAppBundleID,
+           let info = TargetAppInfo.lookup(bundleID: bundleID) {
+            Image(nsImage: info.icon)
+                .resizable()
+                .frame(width: 26, height: 26)
+        } else {
+            Image(systemName: "bolt.fill")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 26, height: 26)
+                .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 6))
+        }
     }
 }
 
@@ -213,64 +250,118 @@ struct HistoryDetailView: View {
     let entry: HistoryEntry
     let onDelete: () -> Void
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top, spacing: 12) {
-                transcriptBox("Raw Transcript", text: entry.rawTranscript)
-                transcriptBox("Final Text", text: entry.finalText)
-            }
-            .frame(maxHeight: .infinity)
+    @State private var justCopied = false
 
-            metadata
-
-            HStack {
-                Button("Copy Final Text", systemImage: "doc.on.doc") {
-                    let pasteboard = NSPasteboard.general
-                    pasteboard.clearContents()
-                    pasteboard.setString(entry.finalText, forType: .string)
-                }
-                Spacer()
-                Button("Delete", systemImage: "trash", role: .destructive, action: onDelete)
-            }
-        }
-        .padding()
+    private var appName: String {
+        entry.targetAppBundleID.map {
+            TargetAppInfo.lookup(bundleID: $0)?.name ?? $0
+        } ?? "Command mode"
     }
 
-    private func transcriptBox(_ title: String, text: String) -> some View {
-        GroupBox(title) {
-            ScrollView {
-                Text(text)
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: Theme.Space.lg) {
+                header
+
+                // The dictated words are the content; everything else steps back.
+                Text(entry.finalText)
+                    .font(.system(size: 15))
+                    .lineSpacing(3)
+                    .foregroundStyle(Color.voxiInk)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(4)
+                    .padding(Theme.Space.lg)
+                    .background(Color.voxiCard, in: RoundedRectangle(cornerRadius: Theme.Radius.card))
+                    .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card).strokeBorder(Color.voxiHairline, lineWidth: 1))
+
+                rawTranscriptSection
+
+                Rectangle().fill(Color.voxiHairline).frame(height: 1)
+
+                metadata
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(Theme.Space.xl)
+        }
+        .safeAreaInset(edge: .bottom) { actionBar }
+    }
+
+    private var header: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(entry.targetAppBundleID == nil ? "Command · \(appName)" : "Dictation · \(appName)")
+                .voxiPlaque()
+            Spacer()
+            Text(entry.createdAt.formatted(date: .abbreviated, time: .shortened))
+                .font(.caption)
+                .monospacedDigit()
+                .foregroundStyle(Color.voxiInk3)
+        }
+    }
+
+    @ViewBuilder
+    private var rawTranscriptSection: some View {
+        if entry.rawTranscript == entry.finalText {
+            Text("Raw transcript identical to final text")
+                .font(.caption)
+                .foregroundStyle(Color.voxiInk3)
+        } else {
+            DisclosureGroup {
+                Text(entry.rawTranscript)
+                    .font(.callout)
+                    .foregroundStyle(Color.voxiInk2)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(Theme.Space.md)
+                    .background(Color.voxiInset, in: RoundedRectangle(cornerRadius: Theme.Radius.control))
+                    .padding(.top, Theme.Space.sm)
+            } label: {
+                Text("Raw transcript").voxiPlaque()
+            }
         }
     }
 
     private var metadata: some View {
-        Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 4) {
+        Grid(alignment: .leading, horizontalSpacing: Theme.Space.lg, verticalSpacing: 6) {
             metadataRow("Engine", "\(entry.engineID) · \(entry.modelID)")
             metadataRow("Refiner", entry.refinerID ?? "none")
             metadataRow("Duration", String(format: "%.1f s", entry.durationSeconds))
-            metadataRow(
-                "Target app",
-                entry.targetAppBundleID.map {
-                    TargetAppInfo.lookup(bundleID: $0)?.name ?? $0
-                } ?? "Command mode"
-            )
-            metadataRow("Date", entry.createdAt.formatted(date: .abbreviated, time: .shortened))
+            metadataRow("Target", appName)
         }
-        .font(.callout)
     }
 
     private func metadataRow(_ label: String, _ value: String) -> some View {
         GridRow {
             Text(label)
-                .foregroundStyle(.secondary)
+                .voxiPlaque()
                 .gridColumnAlignment(.trailing)
             Text(value)
+                .font(.callout)
+                .foregroundStyle(Color.voxiInk)
                 .textSelection(.enabled)
+        }
+    }
+
+    private var actionBar: some View {
+        HStack {
+            Button(justCopied ? "Copied" : "Copy Final Text",
+                   systemImage: justCopied ? "checkmark" : "doc.on.doc") {
+                let pasteboard = NSPasteboard.general
+                pasteboard.clearContents()
+                pasteboard.setString(entry.finalText, forType: .string)
+                justCopied = true
+                Task {
+                    try? await Task.sleep(nanoseconds: 1_200_000_000)
+                    justCopied = false
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            Spacer()
+            Button("Delete", systemImage: "trash", role: .destructive, action: onDelete)
+        }
+        .padding(.horizontal, Theme.Space.xl)
+        .padding(.vertical, Theme.Space.md)
+        .background(Color.voxiPaper)
+        .overlay(alignment: .top) {
+            Rectangle().fill(Color.voxiHairline).frame(height: 1)
         }
     }
 }

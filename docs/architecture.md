@@ -22,6 +22,7 @@ One voice session runs end-to-end through `DictationCoordinator`: a hotkey chord
 | Transcription | Pluggable ASR: Parakeet (default), WhisperKit | `ASREngine` protocol + `ASREngineRegistry` |
 | Refinement | Transcript cleanup + card drafting; LLM optional, rules always | `Refiner` protocol + `RefinerChain` fallback |
 | Insertion | 3-tier text insertion, secure-field refusal, smart formatting | `TextInserter`; probe-before-insert |
+| DesignSystem | Color/radius/spacing tokens (asset catalog), RacingNumberDisc view (queue-position disc) | Theme.swift Color/NSColor accessors; plaque text style |
 | Pill | Floating status panel (one `NSPanel` for app lifetime) | Pure `PillTimingPolicy` decides visibility |
 | CommandQueue | `ActionCard` lifecycle, `QueueRunner`, queue UI | Validated `CardStatus` transitions via `CardStore` |
 | Dispatchers | Card executors; claude binary discovery; stream-json parsing | `Dispatcher` protocol + `DispatcherRegistry` |
@@ -48,6 +49,12 @@ Extension points: a new speech engine, refiner backend, or card executor is one 
 | 2026-07-04 | Nothing auto-dispatches; cards run only on an explicit click | Product safety rule from the spec (`PROMPT.md`) |
 | 2026-07-11 | AVFoundation callback closures must be `@Sendable` | Tap closure inherited `@MainActor` and trapped on the realtime queue — crashed on first live capture; now a steering rule (`steering/CONCURRENCY.md`) |
 | 2026-07-11 | Onboarding mic test gets its own `AudioCapture` instance | The shared instance's single `onLevel` slot was stolen/nil'd by the mic test, killing the pill waveform (voxi-v2 M1) |
+| 2026-07-12 | Colors in asset catalog, Theme.swift hand-written accessors (not codegen) | ~20 colors do not justify SwiftGen dependency; color names appear once; `RacingNumberDisc` is a non-adaptive brand view |
+| 2026-07-12 | Pill forced to `.darkAqua` appearance | Floats over other apps' windows and must not inherit system appearance; adaptive tokens resolve dark inside it in both light and dark system themes |
+| 2026-07-12 | Pill centering via frame-change observer on hosting view | NSHostingView's preferredContentSize resizes panel around fixed bottom-left origin; observer re-pins midX to screen centre; early-return inside observer prevents observer/setFrame loop |
+| 2026-07-12 | Device-name label threads on PillController as a property | Pure `PillTimingPolicy` and its tests remain untouched; `InputDeviceNaming` helper in Capture mirrors AudioCapture.start's default-device fallback |
+| 2026-07-12 | History list day-grouping: pure `HistoryDayGrouping` helper | Merges only adjacent same-day entries; FTS5 search results stay ungrouped and relevance-ranked |
+| 2026-07-12 | CardStatus chip colors map to tokens in QueueView, unit-tested | Semantic color tokens decouple design from layout; status → color mapping moves from implicit to explicit |
 
 ## Open Items
 

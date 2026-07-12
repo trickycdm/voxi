@@ -25,6 +25,11 @@ All colors live as asset-catalog color sets (light + explicit dark variant each)
 4. **Status colors belong to status.** The chip set and Success/Warning/Danger never get borrowed for emphasis.
 5. **The pill is always Night Race.** `PillPanel` pins `NSAppearance(.darkAqua)`, so adaptive tokens resolve dark inside it in both system appearances. Consequence: colors in `PillView` must be adaptive tokens or fixed constants — reintroducing system materials/semantics (e.g. `.regularMaterial`, `.secondary`) silently breaks the pinned look in light mode.
 6. **One British detail per surface**, each encoding real information: pill = coachline; queue = racing-number discs (`RacingNumberDisc`, display order, deliberately non-adaptive); onboarding = gauge-tick progress; Hub = plaque section headers (`Text.voxiPlaque()`); menu bar/app = the roundel. Two on one surface is a costume.
+7. **Rows inside selectable `List`s keep the system text hierarchy** (`.primary`/`.secondary`), not ink tokens — the system flips those styles when a row is selected; fixed ink-on-accent is unreadable in light mode. Tokens resume outside the row. Exemplar: `HistoryRowView`.
+
+## Asset generation
+
+Image-model output (icons, artwork) often fakes transparency by painting a checkerboard into the pixels — check `sips -g hasAlpha` before trusting it. The fix that produced the current app icon: corner flood-fill on neutral (low-spread) pixels to real alpha, then emit the size ladder; brand cream `#FFEFB3` survives any tight neutrality test because of its 76-point red-blue spread. Script pattern: the CoreGraphics flood-mask used for `AppIcon.appiconset` (2026-07-12).
 
 ## Decisions (why it's built this way)
 

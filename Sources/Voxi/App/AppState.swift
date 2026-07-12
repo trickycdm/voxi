@@ -143,7 +143,12 @@ final class AppState {
     private func wirePill(coordinator: DictationCoordinator) {
         coordinator.onStateChange = { [weak self] state in
             guard let self else { return }
-            if case .recording = state { self.pillGain.reset() }
+            if case .recording = state {
+                self.pillGain.reset()
+                self.pill.activeInputName = InputDeviceNaming.resolvedName(
+                    uid: UserDefaults.standard.string(forKey: "audio.inputDeviceUID"),
+                    devices: AudioCapture.listInputDevices())
+            }
             self.pill.transition(to: state)
         }
         capture.onLevel = { [weak self] level in

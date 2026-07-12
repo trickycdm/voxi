@@ -138,6 +138,37 @@ struct PillLevelOnlyChangeTests {
     }
 }
 
+@Suite("Pill timing policy — recording start (device label)")
+struct PillRecordingStartTests {
+    @Test("entering recording from any non-recording state is a start")
+    func nonRecordingToRecordingIsStart() {
+        for from: PillState in [.idle, .processing, .notice("oops")] {
+            #expect(PillTimingPolicy.isRecordingStart(
+                from: from, to: .recording(mode: .dictation, level: 0)))
+            #expect(PillTimingPolicy.isRecordingStart(
+                from: from, to: .recording(mode: .command, level: 0)))
+        }
+    }
+
+    @Test("mid-session retarget and level ticks are not starts")
+    func withinRecordingIsNotStart() {
+        #expect(!PillTimingPolicy.isRecordingStart(
+            from: .recording(mode: .dictation, level: 0.2),
+            to: .recording(mode: .command, level: 0.2)))
+        #expect(!PillTimingPolicy.isRecordingStart(
+            from: .recording(mode: .dictation, level: 0.1),
+            to: .recording(mode: .dictation, level: 0.9)))
+    }
+
+    @Test("leaving recording is not a start")
+    func leavingRecordingIsNotStart() {
+        for to: PillState in [.idle, .processing, .notice("oops")] {
+            #expect(!PillTimingPolicy.isRecordingStart(
+                from: .recording(mode: .dictation, level: 0.4), to: to))
+        }
+    }
+}
+
 /// Drives the policy the way PillController does — one state, one state timer,
 /// one pending-hide flag — to prove full sequences can never strand the pill.
 private struct PolicyHarness {

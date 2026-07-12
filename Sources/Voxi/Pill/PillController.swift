@@ -16,6 +16,14 @@ final class PillController {
     /// don't re-run show/hide logic.
     var level: Float = 0
 
+    /// Name of the input device feeding the session ("MacBook Pro Microphone").
+    /// AppState resolves and sets this at recording start. Kept outside
+    /// PillState for the same reason as `level`.
+    var activeInputName: String?
+    /// Whether the device-name label is showing above the capsule; true for
+    /// policy.deviceLabelLinger after a recording session starts.
+    private(set) var showsDeviceLabel = false
+
     /// Wired by AppState: pill's ✕ button — discard the current dictation.
     var onCancel: (() -> Void)?
     /// Wired by AppState: pill's ✓ button — finish the current dictation.
@@ -25,6 +33,7 @@ final class PillController {
     private var panel: PillPanel?
     private var stateTimer: Timer?
     private var hideTimer: Timer?
+    private var deviceLabelTimer: Timer?
     private var screenObserver: (any NSObjectProtocol)?
 
     init(policy: PillTimingPolicy = PillTimingPolicy()) {
@@ -45,9 +54,42 @@ final class PillController {
             state = newState
             return
         }
+        updateDeviceLabel(from: state, to: newState)
         let directive = policy.directive(from: state, to: newState)
         state = newState
         apply(directive)
+    }
+
+    /// Device-label lifecycle: appears when a recording session starts, fades
+    /// after the policy's linger, and drops immediately when recording ends.
+    /// Decision predicates live in PillTimingPolicy; only execution is here.
+    private func updateDeviceLabel(from: PillState, to: PillState) {
+        if PillTimingPolicy.isRecordingStart(from: from, to: to) {
+            showsDeviceLabel = true
+            armDeviceLabelTimer()
+            return
+        }
+        if case .recording = to { return }  // mid-session retarget keeps the label as-is
+        clearDeviceLabel()
+    }
+
+    private func armDeviceLabelTimer() {
+        deviceLabelTimer?.invalidate()
+        let timer = Timer(timeInterval: policy.deviceLabelLinger, repeats: false) { [weak self] _ in
+            // Scheduled on the main run loop, so main-actor isolation holds.
+            MainActor.assumeIsolated {
+                self?.deviceLabelTimer = nil
+                self?.showsDeviceLabel = false
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        deviceLabelTimer = timer
+    }
+
+    private func clearDeviceLabel() {
+        deviceLabelTimer?.invalidate()
+        deviceLabelTimer = nil
+        showsDeviceLabel = false
     }
 
     // MARK: Convenience API for AppState

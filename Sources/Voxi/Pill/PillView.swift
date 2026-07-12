@@ -5,6 +5,27 @@ struct PillView: View {
     let controller: PillController
 
     var body: some View {
+        VStack(spacing: 6) {
+            // Which mic is live — answered the instant recording starts, then
+            // it gets out of the way (controller fades it after the linger).
+            if case .recording = controller.state, controller.showsDeviceLabel,
+               let name = controller.activeInputName {
+                Text(name)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Color.voxiInk2)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 2)
+                    .background(Color.voxiCard.opacity(0.85), in: Capsule())
+                    .transition(.opacity)
+            }
+            capsule
+        }
+        .animation(.easeInOut(duration: 0.25), value: controller.showsDeviceLabel)
+        .fixedSize()  // intrinsic size → panel sizes itself via sizingOptions
+        .padding(6)   // room for the panel shadow
+    }
+
+    private var capsule: some View {
         content
             .frame(minHeight: 22)
             .padding(.horizontal, 16)
@@ -14,8 +35,6 @@ struct PillView: View {
             // Coachline: the pill's one ornament — a cream keyline inset just
             // inside the edge, like hand-painted bodywork. Pill only.
             .overlay(Capsule().strokeBorder(Color.voxiCoachline, lineWidth: 1).padding(3))
-            .fixedSize()  // intrinsic size → panel sizes itself via sizingOptions
-            .padding(6)   // room for the panel shadow
     }
 
     @ViewBuilder

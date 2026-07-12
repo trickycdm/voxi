@@ -12,6 +12,9 @@ struct PillTimingPolicy: Equatable, Sendable {
     /// After a session ends (any non-idle → .idle), the panel lingers briefly
     /// before hiding.
     var idleLinger: TimeInterval = 1.5
+    /// How long the input-device name stays visible above the pill after a
+    /// recording session starts.
+    var deviceLabelLinger: TimeInterval = 1.5
 
     static let timedOutMessage = "Timed out"
 
@@ -86,6 +89,15 @@ struct PillTimingPolicy: Equatable, Sendable {
         default:
             return nil
         }
+    }
+
+    /// True when this transition starts a recording session (any non-recording
+    /// state → recording). Mid-session retargets (dictation → command) and
+    /// level ticks are not starts — the device label shows once per session.
+    static func isRecordingStart(from: PillState, to: PillState) -> Bool {
+        if case .recording = from { return false }
+        if case .recording = to { return true }
+        return false
     }
 
     /// True when the transition only carries a fresh waveform level within the

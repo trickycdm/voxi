@@ -83,6 +83,8 @@ final class DictationCoordinator {
         }
         activeSession = kind
         hotkeys.sessionActive = true
+        // Physical confirmation the mic is hot; no-op without a Force Touch trackpad.
+        NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .now)
         onStateChange?(.recording(mode: kind.pillMode, level: 0))
         Task { [weak self] in
             guard let self else { return }

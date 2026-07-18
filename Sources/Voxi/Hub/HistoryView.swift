@@ -127,6 +127,12 @@ struct HistoryView: View {
         )
     }
 
+    /// The ledger reads at a book-like measure: the board mock was composed
+    /// at an 860 pt window, and full-bleed cards at desktop widths stretch
+    /// transcript lines past any comfortable reading length. Everything —
+    /// search row included — aligns to one centered column.
+    private static let columnMaxWidth: CGFloat = 760
+
     private var controls: some View {
         HStack(spacing: Theme.Space.md) {
             HubSearchField(
@@ -142,6 +148,8 @@ struct HistoryView: View {
             .disabled(model.recent.isEmpty)
             .help("Delete all dictation history")
         }
+        .frame(maxWidth: Self.columnMaxWidth)
+        .frame(maxWidth: .infinity)
         .padding(.horizontal, Theme.Space.xl)
         // Top padding doubles as the hidden titlebar's drag strip.
         .padding(.top, Theme.Space.xl)
@@ -171,6 +179,8 @@ struct HistoryView: View {
                         }
                     }
                 }
+                .frame(maxWidth: Self.columnMaxWidth)
+                .frame(maxWidth: .infinity)
                 .padding(.horizontal, Theme.Space.xl)
                 .padding(.bottom, Theme.Space.xl)
             }
@@ -258,6 +268,7 @@ struct HistoryCardView: View {
                 } else {
                     Text(entry.finalText)
                         .foregroundStyle(Color.voxiInk)
+                        .lineSpacing(2)
                         .lineLimit(2)
                 }
                 meta

@@ -42,6 +42,14 @@ extension Color {
     // pinned to dark appearance, so this always resolves to the mint variant.
     static let voxiCommandTint = Color("VoxiSuccess")
 
+    // The Pit Wall rail (Hub sidebar) — racing green in BOTH appearances; the
+    // rail pins .environment(\.colorScheme, .dark) so adaptive tokens inside
+    // resolve Night Race, mirroring the pill's panel-level pin.
+    static let voxiRacing = Color("VoxiRacing")
+    // Rail selected-item fill: butter at 14% with the alpha baked into the
+    // color set (the VoxiStatus*Bg pattern) — used nowhere else.
+    static let voxiRailSelection = Color("VoxiRailSelection")
+
     // Semantic state (text/icons) — never borrowed for emphasis.
     static let voxiSuccess = Color("VoxiSuccess")
     static let voxiWarning = Color("VoxiWarning")

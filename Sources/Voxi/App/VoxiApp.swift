@@ -12,12 +12,16 @@ struct VoxiApp: App {
                 .environment(appDelegate.appState)
         }
 
+        // Title stays "Voxi Hub" for the Window menu and accessibility; the
+        // titlebar itself is hidden so the Pit Wall rail runs full bleed with
+        // the traffic lights overlaid on it.
         Window("Voxi Hub", id: "hub") {
             HubView()
                 .environment(appDelegate.appState)
         }
+        .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
-        .defaultSize(width: 760, height: 520)
+        .defaultSize(width: 880, height: 560)
     }
 }
 

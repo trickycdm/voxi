@@ -9,9 +9,6 @@ struct HubView: View {
         case dictionary
         case settings
 
-        // Identity must be Self, not String: List's implicit row tags come from
-        // `id`, and they must match the `HubSection?` selection binding or
-        // sidebar clicks are silently dropped.
         var id: Self { self }
 
         var title: String {
@@ -32,38 +29,39 @@ struct HubView: View {
     }
 
     @Environment(AppState.self) private var appState
-    @State private var selection: HubSection? = .history
+    @State private var selection: HubSection = .history
 
     var body: some View {
-        NavigationSplitView {
-            List(HubSection.allCases, selection: $selection) { section in
-                Label(section.title, systemImage: section.systemImage)
-            }
-            .navigationSplitViewColumnWidth(min: 150, ideal: 170)
-        } detail: {
-            Group {
-                switch selection ?? .history {
-                case .history:
-                    if let store = appState.historyStore {
-                        HistoryView(store: store)
-                    } else {
-                        databaseUnavailable
-                    }
-                case .dictionary:
-                    if let store = appState.dictionaryStore {
-                        DictionaryView(store: store)
-                    } else {
-                        databaseUnavailable
-                    }
-                case .settings:
-                    HubSettingsView()
-                }
-            }
-            // Paper ground on the detail pane only; the sidebar keeps the
-            // system vibrancy material (it resists .background on macOS 14).
-            .background(Color.voxiPaper)
+        HStack(spacing: 0) {
+            HubRailView(selection: $selection)
+            detail
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color.voxiPaper)
         }
-        .frame(minWidth: 760, minHeight: 480)
+        // Full bleed under the hidden titlebar; the rail owns the top edge.
+        .ignoresSafeArea(.container, edges: .top)
+        // Min width = rail 196 + History's HSplitView minimums (280 + 340).
+        .frame(minWidth: 820, minHeight: 480)
+    }
+
+    @ViewBuilder
+    private var detail: some View {
+        switch selection {
+        case .history:
+            if let store = appState.historyStore {
+                HistoryView(store: store)
+            } else {
+                databaseUnavailable
+            }
+        case .dictionary:
+            if let store = appState.dictionaryStore {
+                DictionaryView(store: store)
+            } else {
+                databaseUnavailable
+            }
+        case .settings:
+            HubSettingsView()
+        }
     }
 
     private var databaseUnavailable: some View {

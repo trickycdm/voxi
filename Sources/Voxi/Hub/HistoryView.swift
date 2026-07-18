@@ -86,19 +86,34 @@ struct HistoryView: View {
     @State private var model: HistoryModel
     @State private var selectionID: HistoryEntry.ID?
     @State private var confirmingClearAll = false
+    @FocusState private var searchFocused: Bool
 
     init(store: HistoryStore) {
         _model = State(initialValue: HistoryModel(store: store))
     }
 
     var body: some View {
-        HSplitView {
-            listPane
-                .frame(minWidth: 280, idealWidth: 340)
-            detailPane
-                .frame(minWidth: 340, maxWidth: .infinity, maxHeight: .infinity)
+        VStack(spacing: 0) {
+            HubPaneHeader("History") {
+                HubSearchField(
+                    prompt: "Search dictations",
+                    text: $model.searchText,
+                    focus: $searchFocused)
+                Button("Clear All", systemImage: "trash") {
+                    confirmingClearAll = true
+                }
+                .labelStyle(.iconOnly)
+                .buttonStyle(.borderless)
+                .disabled(model.recent.isEmpty)
+                .help("Delete all dictation history")
+            }
+            HSplitView {
+                listPane
+                    .frame(minWidth: 280, idealWidth: 340)
+                detailPane
+                    .frame(minWidth: 340, maxWidth: .infinity, maxHeight: .infinity)
+            }
         }
-        .searchable(text: $model.searchText, prompt: "Search dictations")
         .task { await model.observeRecent() }
         .task(id: model.searchText) {
             // Debounce: typing restarts this task; only a 200ms-stable query hits FTS.
@@ -106,15 +121,6 @@ struct HistoryView: View {
             try? await Task.sleep(nanoseconds: 200_000_000)
             guard !Task.isCancelled else { return }
             await model.searchNow()
-        }
-        .toolbar {
-            ToolbarItem {
-                Button("Clear All", systemImage: "trash") {
-                    confirmingClearAll = true
-                }
-                .disabled(model.recent.isEmpty)
-                .help("Delete all dictation history")
-            }
         }
         .confirmationDialog(
             "Delete all dictation history?",
@@ -126,7 +132,13 @@ struct HistoryView: View {
         } message: {
             Text("This permanently deletes every saved dictation. This cannot be undone.")
         }
-        .navigationTitle("History")
+        // ⌘F focuses search now that `.searchable`'s toolbar shortcut is gone.
+        .background(
+            Button("") { searchFocused = true }
+                .keyboardShortcut("f")
+                .hidden()
+                .accessibilityHidden(true)
+        )
     }
 
     private var listPane: some View {

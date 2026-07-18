@@ -68,24 +68,20 @@ struct DictionaryView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            explainer
-            Divider()
-            content
-        }
-        .task { await model.load() }
-        .toolbar {
-            ToolbarItem {
+            HubPaneHeader("Dictionary") {
                 Button("Add Term", systemImage: "plus") { addingEntry = true }
                     .help("Add a dictionary term")
             }
+            explainer
+            content
         }
+        .task { await model.load() }
         .sheet(isPresented: $addingEntry) {
             DictionaryEditorSheet(model: model, entry: nil)
         }
         .sheet(item: $editingEntry) { entry in
             DictionaryEditorSheet(model: model, entry: entry)
         }
-        .navigationTitle("Dictionary")
     }
 
     private var explainer: some View {

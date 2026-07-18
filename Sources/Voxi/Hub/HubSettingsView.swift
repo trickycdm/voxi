@@ -5,15 +5,17 @@ struct HubSettingsView: View {
     @Environment(AppState.self) private var appState
 
     var body: some View {
-        Form {
-            GeneralSettingsSection(inserter: appState.inserter)
-            HotkeySettingsSection(hotkeys: appState.hotkeys)
-            MicrophoneSettingsSection()
-            SpeechSettingsSection(registry: appState.registry)
-            RefinementSettingsSection()
+        VStack(spacing: 0) {
+            HubPaneHeader("Settings")
+            Form {
+                GeneralSettingsSection(inserter: appState.inserter)
+                HotkeySettingsSection(hotkeys: appState.hotkeys)
+                MicrophoneSettingsSection()
+                SpeechSettingsSection(registry: appState.registry)
+                RefinementSettingsSection()
+            }
+            .formStyle(.grouped)
+            .scrollContentBackground(.hidden)  // let the Paper ground show through
         }
-        .formStyle(.grouped)
-        .scrollContentBackground(.hidden)  // let the Paper ground show through
-        .navigationTitle("Settings")
     }
 }

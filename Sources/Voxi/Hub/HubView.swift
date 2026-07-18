@@ -40,7 +40,7 @@ struct HubView: View {
         }
         // Full bleed under the hidden titlebar; the rail owns the top edge.
         .ignoresSafeArea(.container, edges: .top)
-        // Min width = rail 196 + History's HSplitView minimums (280 + 340).
+        // Rail 196 + a comfortable single-column reading ledger.
         .frame(minWidth: 820, minHeight: 480)
     }
 

@@ -27,7 +27,7 @@ All colors live as asset-catalog color sets (light + explicit dark variant each)
 4. **Status colors belong to status.** The chip set and Success/Warning/Danger never get borrowed for emphasis.
 5. **The pill and the Hub rail are always Night Race.** `PillPanel` pins `NSAppearance(.darkAqua)` at the panel; `HubRailView` pins `.environment(\.colorScheme, .dark)` on its subtree. Same consequence for both: colors inside must be adaptive tokens or fixed constants — system materials/semantics (e.g. `.regularMaterial`, `.secondary`) silently break the pinned look in light mode. The rail additionally must stay pure SwiftUI: AppKit-hosted controls ignore the SwiftUI pin.
 6. **One British detail per surface**, each encoding real information: pill = coachline; queue = racing-number discs (`RacingNumberDisc`, display order, deliberately non-adaptive); onboarding = gauge-tick progress; Hub = the Pit Wall rail (racing ground, roundel, butter selection) with plaques (`Text.voxiPlaque()`) demoted to supporting captions inside panes; menu bar/app = the roundel. Two on one surface is a costume.
-7. **Rows inside selectable `List`s keep the system text hierarchy** (`.primary`/`.secondary`), not ink tokens — the system flips those styles when a row is selected; fixed ink-on-accent is unreadable in light mode. Tokens resume outside the row. Exemplar: `HistoryRowView`.
+7. **Rows inside selectable `List`s keep the system text hierarchy** (`.primary`/`.secondary`), not ink tokens — the system flips those styles when a row is selected; fixed ink-on-accent is unreadable in light mode. Tokens resume outside the row. Exemplar: `DictionaryRowView`. (History's ledger cards are not List rows — they sit on Paper and use ink tokens.)
 
 ## Asset generation
 

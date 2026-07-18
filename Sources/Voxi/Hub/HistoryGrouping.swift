@@ -32,10 +32,15 @@ enum HistoryDayGrouping {
         return result
     }
 
+    /// Board format: "Today — Sunday 12 July" / "Yesterday — Saturday 11 July";
+    /// older days keep the plain long date.
     static func title(for day: Date, now: Date, calendar: Calendar) -> String {
-        if calendar.isDate(day, inSameDayAs: now) { return "Today" }
+        let weekdayDayMonth = day.formatted(
+            Date.FormatStyle(calendar: calendar, timeZone: calendar.timeZone)
+                .weekday(.wide).day().month(.wide))
+        if calendar.isDate(day, inSameDayAs: now) { return "Today — \(weekdayDayMonth)" }
         if let yesterday = calendar.date(byAdding: .day, value: -1, to: now),
-           calendar.isDate(day, inSameDayAs: yesterday) { return "Yesterday" }
+           calendar.isDate(day, inSameDayAs: yesterday) { return "Yesterday — \(weekdayDayMonth)" }
         return day.formatted(date: .long, time: .omitted)
     }
 }

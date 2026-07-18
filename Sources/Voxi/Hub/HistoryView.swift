@@ -84,7 +84,7 @@ enum TargetAppInfo {
 
 struct HistoryView: View {
     @State private var model: HistoryModel
-    @State private var selectionID: HistoryEntry.ID?
+    @State private var expandedID: HistoryEntry.ID?
     @State private var confirmingClearAll = false
     @FocusState private var searchFocused: Bool
 
@@ -92,27 +92,13 @@ struct HistoryView: View {
         _model = State(initialValue: HistoryModel(store: store))
     }
 
+    // Board layout (Pit Wall, direction A): no pane title — the rail carries
+    // context. Search sits top-left, then a single full-width card ledger with
+    // day rules; a tapped card expands in place to the full transcript.
     var body: some View {
         VStack(spacing: 0) {
-            HubPaneHeader("History") {
-                HubSearchField(
-                    prompt: "Search dictations",
-                    text: $model.searchText,
-                    focus: $searchFocused)
-                Button("Clear All", systemImage: "trash") {
-                    confirmingClearAll = true
-                }
-                .labelStyle(.iconOnly)
-                .buttonStyle(.borderless)
-                .disabled(model.recent.isEmpty)
-                .help("Delete all dictation history")
-            }
-            HSplitView {
-                listPane
-                    .frame(minWidth: 280, idealWidth: 340)
-                detailPane
-                    .frame(minWidth: 340, maxWidth: .infinity, maxHeight: .infinity)
-            }
+            controls
+            ledger
         }
         .task { await model.observeRecent() }
         .task(id: model.searchText) {
@@ -141,37 +127,80 @@ struct HistoryView: View {
         )
     }
 
-    private var listPane: some View {
-        Group {
-            if model.displayed.isEmpty {
-                emptyState
-            } else if case .search = model.mode {
-                // FTS results are relevance-ranked — day sections would
-                // interleave, so search stays a flat list.
-                List(model.displayed, selection: $selectionID) { entry in
-                    HistoryRowView(entry: entry)
-                        .tag(entry.id)
-                }
-                .listStyle(.inset)
-                .scrollContentBackground(.hidden)
-            } else {
-                List(selection: $selectionID) {
-                    ForEach(HistoryDayGrouping.sections(model.displayed), id: \.title) { section in
-                        Section {
+    private var controls: some View {
+        HStack(spacing: Theme.Space.md) {
+            HubSearchField(
+                prompt: "Search dictations",
+                text: $model.searchText,
+                focus: $searchFocused)
+            Spacer()
+            Button("Clear All", systemImage: "trash") {
+                confirmingClearAll = true
+            }
+            .labelStyle(.iconOnly)
+            .buttonStyle(.borderless)
+            .disabled(model.recent.isEmpty)
+            .help("Delete all dictation history")
+        }
+        .padding(.horizontal, Theme.Space.xl)
+        // Top padding doubles as the hidden titlebar's drag strip.
+        .padding(.top, Theme.Space.xl)
+        .padding(.bottom, Theme.Space.md)
+    }
+
+    @ViewBuilder
+    private var ledger: some View {
+        if model.displayed.isEmpty {
+            emptyState
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: Theme.Space.sm) {
+                    if case .search = model.mode {
+                        // FTS results are relevance-ranked — day sections
+                        // would interleave, so search stays a flat list.
+                        ForEach(model.displayed) { entry in
+                            card(for: entry)
+                        }
+                    } else {
+                        ForEach(HistoryDayGrouping.sections(model.displayed), id: \.title) { section in
+                            dayHeader(section.title)
                             ForEach(section.entries) { entry in
-                                HistoryRowView(entry: entry)
-                                    .tag(entry.id)
+                                card(for: entry)
                             }
-                        } header: {
-                            Text(section.title).voxiPlaque()
                         }
                     }
                 }
-                .listStyle(.inset)
-                .scrollContentBackground(.hidden)
+                .padding(.horizontal, Theme.Space.xl)
+                .padding(.bottom, Theme.Space.xl)
             }
         }
-        .background(Color.voxiPaper)
+    }
+
+    private func dayHeader(_ title: String) -> some View {
+        HStack(spacing: Theme.Space.md) {
+            Text(title).voxiPlaque()
+                .lineLimit(1)
+                .fixedSize()
+            Rectangle().fill(Color.voxiHairline).frame(height: 1)
+        }
+        .padding(.top, Theme.Space.lg)
+        .padding(.bottom, Theme.Space.xs)
+    }
+
+    private func card(for entry: HistoryEntry) -> some View {
+        HistoryCardView(
+            entry: entry,
+            isExpanded: expandedID == entry.id,
+            onToggle: {
+                withAnimation(.easeInOut(duration: 0.15)) {
+                    expandedID = expandedID == entry.id ? nil : entry.id
+                }
+            },
+            onDelete: {
+                Task { await model.delete(entry) }
+                if expandedID == entry.id { expandedID = nil }
+            })
     }
 
     @ViewBuilder
@@ -187,126 +216,91 @@ struct HistoryView: View {
         }
     }
 
-    @ViewBuilder
-    private var detailPane: some View {
-        if let entry = model.displayed.first(where: { $0.id == selectionID }) {
-            HistoryDetailView(entry: entry) {
-                Task { await model.delete(entry) }
-                selectionID = nil
-            }
-        } else {
-            ContentUnavailableView(
-                "No Selection",
-                systemImage: "waveform",
-                description: Text("Select a dictation to read it in full.")
-            )
-        }
-    }
 }
 
-struct HistoryRowView: View {
+/// One board-style ledger card: time column, transcript preview, app chip and
+/// word count; expands in place to the full transcript, raw-transcript
+/// disclosure, metadata, and actions. Cards live on the Paper ground and
+/// separate by tone (voxiCard), so ink tokens apply — the system-hierarchy
+/// rule is only for rows inside selectable Lists.
+struct HistoryCardView: View {
     let entry: HistoryEntry
+    let isExpanded: Bool
+    let onToggle: () -> Void
+    let onDelete: () -> Void
 
-    // Rows keep the system text hierarchy (.primary/.secondary) rather than
-    // ink tokens: List flips these automatically when the row is selected,
-    // and fixed ink-on-accent would be unreadable in light mode.
-    var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            kindBadge
-            VStack(alignment: .leading, spacing: 4) {
-                Text(entry.finalText)
-                    .lineLimit(2)
-                HStack(spacing: 6) {
-                    Text(appName)
-                    Text(entry.engineID)
-                        .font(.caption2)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 1)
-                        .background(.quaternary.opacity(0.6), in: Capsule())
-                    Spacer()
-                    Text(entry.createdAt, format: .relative(presentation: .named))
-                        .monospacedDigit()
-                        .foregroundStyle(.tertiary)
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-            }
-        }
-        .padding(.vertical, 5)
-    }
+    @State private var hovering = false
+    @State private var justCopied = false
 
     private var appName: String {
         guard let bundleID = entry.targetAppBundleID else { return "Command" }
         return TargetAppInfo.lookup(bundleID: bundleID)?.name ?? bundleID
     }
 
-    @ViewBuilder
-    private var kindBadge: some View {
-        if let bundleID = entry.targetAppBundleID,
-           let info = TargetAppInfo.lookup(bundleID: bundleID) {
-            Image(nsImage: info.icon)
-                .resizable()
-                .frame(width: 26, height: 26)
-        } else {
-            Image(systemName: "bolt.fill")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Color.accentColor)
-                .frame(width: 26, height: 26)
-                .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 6))
-        }
-    }
-}
-
-struct HistoryDetailView: View {
-    let entry: HistoryEntry
-    let onDelete: () -> Void
-
-    @State private var justCopied = false
-
-    private var appName: String {
-        entry.targetAppBundleID.map {
-            TargetAppInfo.lookup(bundleID: $0)?.name ?? $0
-        } ?? "Command mode"
+    private var wordCount: Int {
+        entry.finalText.split(whereSeparator: \.isWhitespace).count
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: Theme.Space.lg) {
-                header
-
-                // The dictated words are the content; everything else steps back.
-                Text(entry.finalText)
-                    .font(.system(size: 15))
-                    .lineSpacing(3)
-                    .foregroundStyle(Color.voxiInk)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(Theme.Space.lg)
-                    .background(Color.voxiCard, in: RoundedRectangle(cornerRadius: Theme.Radius.card))
-                    .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card).strokeBorder(Color.voxiHairline, lineWidth: 1))
-
-                rawTranscriptSection
-
-                Rectangle().fill(Color.voxiHairline).frame(height: 1)
-
-                metadata
-            }
-            .padding(Theme.Space.xl)
-        }
-        .safeAreaInset(edge: .bottom) { actionBar }
-    }
-
-    private var header: some View {
-        HStack(alignment: .firstTextBaseline) {
-            Text(entry.targetAppBundleID == nil ? "Command · \(appName)" : "Dictation · \(appName)")
-                .voxiPlaque()
-            Spacer()
-            Text(entry.createdAt.formatted(date: .abbreviated, time: .shortened))
+        HStack(alignment: .top, spacing: Theme.Space.lg) {
+            Text(entry.createdAt.formatted(date: .omitted, time: .shortened))
                 .font(.caption)
                 .monospacedDigit()
                 .foregroundStyle(Color.voxiInk3)
+                .frame(width: 48, alignment: .leading)
+                .padding(.top, 2)
+            VStack(alignment: .leading, spacing: Theme.Space.xs) {
+                if isExpanded {
+                    Text(entry.finalText)
+                        .foregroundStyle(Color.voxiInk)
+                        .lineSpacing(3)
+                        .textSelection(.enabled)
+                } else {
+                    Text(entry.finalText)
+                        .foregroundStyle(Color.voxiInk)
+                        .lineLimit(2)
+                }
+                meta
+                if isExpanded {
+                    expandedDetail
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .padding(.vertical, Theme.Space.md)
+        .padding(.horizontal, Theme.Space.lg)
+        .background(
+            hovering && !isExpanded ? Color.voxiInset : Color.voxiCard,
+            in: RoundedRectangle(cornerRadius: Theme.Radius.card))
+        .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
+        // Tap-to-open only; the expanded card collapses via its chevron so
+        // clicks during text selection don't snap it shut.
+        .onTapGesture { if !isExpanded { onToggle() } }
+        .onHover { hovering = $0 }
+    }
+
+    private var meta: some View {
+        HStack(spacing: Theme.Space.sm) {
+            Text(appName)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(Color.voxiInk2)
+                .padding(.horizontal, Theme.Space.sm)
+                .padding(.vertical, 2)
+                .background(Color.voxiInset, in: Capsule())
+            Text("\(wordCount) words · \(entry.engineID.capitalized)")
+                .font(.caption)
+                .foregroundStyle(Color.voxiInk3)
+        }
+    }
+
+    private var expandedDetail: some View {
+        VStack(alignment: .leading, spacing: Theme.Space.md) {
+            rawTranscriptSection
+            Rectangle().fill(Color.voxiHairline).frame(height: 1)
+            metadata
+            actions
+        }
+        .padding(.top, Theme.Space.sm)
     }
 
     @ViewBuilder
@@ -352,7 +346,7 @@ struct HistoryDetailView: View {
         }
     }
 
-    private var actionBar: some View {
+    private var actions: some View {
         HStack {
             Button(justCopied ? "Copied" : "Copy Final Text",
                    systemImage: justCopied ? "checkmark" : "doc.on.doc") {
@@ -365,15 +359,14 @@ struct HistoryDetailView: View {
                     justCopied = false
                 }
             }
-            .buttonStyle(.borderedProminent)
-            Spacer()
+            .buttonStyle(.bordered)
             Button("Delete", systemImage: "trash", role: .destructive, action: onDelete)
-        }
-        .padding(.horizontal, Theme.Space.xl)
-        .padding(.vertical, Theme.Space.md)
-        .background(Color.voxiPaper)
-        .overlay(alignment: .top) {
-            Rectangle().fill(Color.voxiHairline).frame(height: 1)
+                .buttonStyle(.borderless)
+            Spacer()
+            Button("Collapse", systemImage: "chevron.up", action: onToggle)
+                .labelStyle(.iconOnly)
+                .buttonStyle(.borderless)
+                .help("Collapse")
         }
     }
 }

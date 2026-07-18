@@ -36,7 +36,8 @@ struct HistoryGroupingTests {
             entry(hoursAgo: 65),   // 2026-07-09 17:00
         ]
         let sections = HistoryDayGrouping.sections(entries, now: now, calendar: calendar)
-        #expect(sections.map(\.title) == ["Today", "Yesterday", "9 July 2026"])
+        #expect(sections.map(\.title)
+            == ["Today — Sunday 12 July", "Yesterday — Saturday 11 July", "9 July 2026"])
         #expect(sections.map(\.entries.count) == [2, 1, 2])
     }
 
@@ -59,7 +60,9 @@ struct HistoryGroupingTests {
         // by an entry from another day.
         let entries = [entry(hoursAgo: 1), entry(hoursAgo: 30), entry(hoursAgo: 2)]
         let sections = HistoryDayGrouping.sections(entries, now: now, calendar: calendar)
-        #expect(sections.map(\.title) == ["Today", "Yesterday", "Today"])
+        #expect(sections.map(\.title) == [
+            "Today — Sunday 12 July", "Yesterday — Saturday 11 July", "Today — Sunday 12 July",
+        ])
     }
 
     @Test("titles pin to the calendar day, not 24-hour windows")
@@ -67,6 +70,6 @@ struct HistoryGroupingTests {
         // 11 hours ago is 23:00 *yesterday* even though it's within 24h.
         let sections = HistoryDayGrouping.sections(
             [entry(hoursAgo: 11)], now: now, calendar: calendar)
-        #expect(sections.map(\.title) == ["Yesterday"])
+        #expect(sections.map(\.title) == ["Yesterday — Saturday 11 July"])
     }
 }

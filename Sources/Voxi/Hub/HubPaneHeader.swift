@@ -66,6 +66,6 @@ struct HubSearchField: View {
         .padding(.vertical, 5)
         .padding(.horizontal, Theme.Space.sm)
         .background(Color.voxiInset, in: RoundedRectangle(cornerRadius: Theme.Radius.control))
-        .frame(width: 220)
+        .frame(width: 320)
     }
 }

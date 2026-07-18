@@ -51,8 +51,16 @@ final class TextInserter {
         guard let target = AXFocus.frontmostTarget() else {
             throw InsertionError.noFocusedElement
         }
-        if AXFocus.isSecure(target) {
+        if AXFocus.isSecureField(target) {
             throw InsertionError.secureField
+        }
+        switch SecureInput.evaluate(targetPID: target.appPID, targetBundleID: target.appBundleID) {
+        case .allow:
+            break
+        case .heldByTarget(let holderName):
+            throw InsertionError.secureInputHeld(by: holderName)
+        case .heldByUnknown:
+            throw InsertionError.secureInputHeld(by: nil)
         }
 
         let isElectron = AXFocus.isElectronApp(bundleURL: target.appBundleURL)

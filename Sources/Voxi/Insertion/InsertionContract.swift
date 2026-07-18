@@ -15,12 +15,20 @@ struct InsertionOutcome: Sendable {
 
 enum InsertionError: Error, LocalizedError {
     case secureField
+    /// The target app (or an unidentifiable process) holds secure event input.
+    case secureInputHeld(by: String?)
     case noFocusedElement
     case allTiersFailed(String)
 
     var errorDescription: String? {
         switch self {
         case .secureField: "Refusing to insert into a secure (password) field"
+        case .secureInputHeld(let holder):
+            if let holder {
+                "\(holder) is capturing secure input — not inserting"
+            } else {
+                "Secure input is on (holder unknown) — not inserting"
+            }
         case .noFocusedElement: "No focused text field found"
         case .allTiersFailed(let why): "Text insertion failed: \(why)"
         }

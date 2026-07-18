@@ -55,6 +55,7 @@ Extension points: a new speech engine, refiner backend, or card executor is one 
 | 2026-07-12 | Device-name label threads on PillController as a property | Pure `PillTimingPolicy` and its tests remain untouched; `InputDeviceNaming` helper in Capture mirrors AudioCapture.start's default-device fallback |
 | 2026-07-12 | History list day-grouping: pure `HistoryDayGrouping` helper | Merges only adjacent same-day entries; FTS5 search results stay ungrouped and relevance-ranked |
 | 2026-07-12 | CardStatus chip colors map to tokens in QueueView, unit-tested | Semantic color tokens decouple design from layout; status → color mapping moves from implicit to explicit |
+| 2026-07-18 | Secure-input refusal is holder-aware, not flag-global | `IsSecureEventInputEnabled()` is machine-global; MDM agents hold it session-long, which killed all insertion on a managed Mac. `SecureInput` reads the holder PID from IORegistry `IOConsoleUsers` (must use `IORegistryGetRootEntry`; the `IOService:/` path form lacks the property) and refuses only when the holder is the target app or unidentifiable. `AXSecureTextField` subrole still always refuses |
 
 ## Open Items
 

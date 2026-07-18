@@ -220,3 +220,55 @@ import Testing
         #expect(!AXFocus.isElectronApp(bundleURL: nil))
     }
 }
+
+@Suite struct SecureInputVerdictTests {
+    private let mdmAgent = SecureInput.Holder(pid: 390, bundleID: nil, name: nil)
+    private let safari = SecureInput.Holder(
+        pid: 812, bundleID: "com.apple.Safari", name: "Safari")
+
+    @Test func disabledFlagAllows() {
+        #expect(SecureInput.verdict(
+            secureInputEnabled: false, holders: [], targetPID: 100, targetBundleID: "com.a.b"
+        ) == .allow)
+    }
+
+    @Test func backgroundHolderDoesNotBlockOtherApps() {
+        // The work-Mac case: an MDM daemon holds secure input session-long.
+        #expect(SecureInput.verdict(
+            secureInputEnabled: true, holders: [mdmAgent],
+            targetPID: 100, targetBundleID: "com.apple.TextEdit"
+        ) == .allow)
+    }
+
+    @Test func targetHoldingByPIDBlocksAndNamesHolder() {
+        #expect(SecureInput.verdict(
+            secureInputEnabled: true, holders: [safari],
+            targetPID: 812, targetBundleID: "com.apple.Safari"
+        ) == .heldByTarget(holderName: "Safari"))
+    }
+
+    @Test func targetHoldingViaHelperProcessMatchesByBundle() {
+        // Browsers take the hold from a helper PID, not the frontmost app PID.
+        let helper = SecureInput.Holder(
+            pid: 999, bundleID: "com.apple.Safari", name: "Safari")
+        #expect(SecureInput.verdict(
+            secureInputEnabled: true, holders: [mdmAgent, helper],
+            targetPID: 812, targetBundleID: "com.apple.Safari"
+        ) == .heldByTarget(holderName: "Safari"))
+    }
+
+    @Test func nilBundleHolderNeverMatchesNilBundleTarget() {
+        // A daemon holder (bundleID nil) must not bundle-match a target that
+        // also reports no bundle ID.
+        #expect(SecureInput.verdict(
+            secureInputEnabled: true, holders: [mdmAgent],
+            targetPID: 100, targetBundleID: nil
+        ) == .allow)
+    }
+
+    @Test func unknownHolderRefuses() {
+        #expect(SecureInput.verdict(
+            secureInputEnabled: true, holders: [], targetPID: 100, targetBundleID: "com.a.b"
+        ) == .heldByUnknown)
+    }
+}

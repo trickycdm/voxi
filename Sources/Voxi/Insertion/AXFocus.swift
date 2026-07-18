@@ -61,11 +61,11 @@ enum AXFocus {
         )
     }
 
-    /// Refuse to dictate into password fields: AX subrole, or any process
-    /// holding secure event input (covers fields AX cannot see).
-    static func isSecure(_ target: FocusedTarget) -> Bool {
-        if target.subrole == kAXSecureTextFieldSubrole as String { return true }
-        return IsSecureEventInputEnabled()
+    /// The focused element is a password field. The machine-global secure
+    /// input flag is judged separately by `SecureInput` — it must not be read
+    /// as "focused field is secure" (MDM agents hold it session-long).
+    static func isSecureField(_ target: FocusedTarget) -> Bool {
+        target.subrole == kAXSecureTextFieldSubrole as String
     }
 
     // MARK: - Surroundings

@@ -16,7 +16,7 @@ Three tiers, orchestrated by `TextInserter`: AX direct write (`AXDirectInserter`
 
 - **Probe BEFORE inserting** (`AXUIElementIsAttributeSettable`) — a tier-2 failure is undetectable after the fact; tier order and the probe are load-bearing.
 - **Verify AX writes by caret advance, measured in UTF-16** (`(text as NSString).length`) — Chromium returns AX `.success` without inserting.
-- **Refuse secure fields**: `IsSecureEventInputEnabled()` or `AXSecureTextField` subrole → no insertion, ever.
+- **Refuse secure fields**: `AXSecureTextField` subrole → no insertion, ever. The machine-global `IsSecureEventInputEnabled()` flag alone must NOT refuse — MDM/endpoint agents hold it session-long and it killed all insertion on managed Macs. `SecureInput` resolves the holder PID from the IORegistry (`IOConsoleUsers`, via `IORegistryGetRootEntry` — the `IOService:/` path form silently lacks the property) and refuses only when the holder is the target app (or unidentifiable).
 - Pasteboard restore only if `changeCount` is unchanged after ≥300 ms, and only when the user toggle allows (macOS 15.4+ shows pasteboard-read alerts).
 - Electron apps skip tier 1 (denylist heuristic + best-effort `AXManualAccessibility`).
 

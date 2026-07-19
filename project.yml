@@ -45,6 +45,7 @@ targets:
         CFBundleVersion: "1"
         LSUIElement: true
         LSMinimumSystemVersion: "14.0"
+        LSApplicationCategoryType: public.app-category.productivity
         NSMicrophoneUsageDescription: Voxi needs the microphone to transcribe your dictation.
         NSAppleEventsUsageDescription: Voxi uses Apple Events to insert dictated text into other applications.
         NSPrincipalClass: NSApplication

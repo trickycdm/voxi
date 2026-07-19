@@ -114,14 +114,51 @@ grep -q "accepted" <<< "$APP_ASSESS" || die "spctl rejected the app: $APP_ASSESS
 DMG_ASSESS="$(spctl -a -t open --context context:primary-signature -vv "$DIST/Voxi-$VERSION.dmg" 2>&1 || true)"
 grep -q "accepted" <<< "$DMG_ASSESS" || die "spctl rejected the DMG: $DMG_ASSESS"
 
-# --- 8. Summary --------------------------------------------------------------
+# --- 8. Sparkle appcast item --------------------------------------------------
+# EdDSA-sign the DMG and insert an <item> into appcast.xml (served raw from
+# GitHub — SUFeedURL in project.yml). The private key lives in the login
+# Keychain (generate_keys, 2026-07-19). Tools are downloaded pinned to the
+# resolved Sparkle package version and cached under build/.
+log "sparkle appcast"
 DMG="$DIST/Voxi-$VERSION.dmg"
+SPARKLE_VERSION="$(jq -r '.pins[] | select(.identity=="sparkle") | .state.version' \
+  "$ROOT/Voxi.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved")"
+[[ -n "$SPARKLE_VERSION" && "$SPARKLE_VERSION" != "null" ]] || die "could not read Sparkle version from Package.resolved"
+TOOLS="$ROOT/build/sparkle-tools-$SPARKLE_VERSION"
+if [[ ! -x "$TOOLS/bin/sign_update" ]]; then
+  log "downloading Sparkle $SPARKLE_VERSION tools"
+  mkdir -p "$TOOLS"
+  curl -sfL "https://github.com/sparkle-project/Sparkle/releases/download/$SPARKLE_VERSION/Sparkle-$SPARKLE_VERSION.tar.xz" \
+    | tar -xJ -C "$TOOLS" || die "Sparkle tools download failed"
+fi
+BUILD_NO="$(defaults read "$APP/Contents/Info" CFBundleVersion)"
+grep -q "sparkle:version=\"$BUILD_NO\"" "$ROOT/appcast.xml" \
+  && die "appcast.xml already has an item with sparkle:version=$BUILD_NO — remove it first (CFBundleVersion must bump every release)"
+SIGNATURE="$("$TOOLS/bin/sign_update" "$DMG")"   # sparkle:edSignature="…" length="…"
+grep -q "edSignature" <<< "$SIGNATURE" || die "sign_update produced no signature (Keychain access denied?)"
+ITEM="        <item>\\
+            <title>Voxi $VERSION</title>\\
+            <pubDate>$(LC_ALL=en_US.UTF-8 date '+%a, %d %b %Y %H:%M:%S %z')</pubDate>\\
+            <sparkle:version>$BUILD_NO</sparkle:version>\\
+            <sparkle:shortVersionString>$VERSION</sparkle:shortVersionString>\\
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>\\
+            <enclosure url=\"https://github.com/trickycdm/voxi/releases/download/v$VERSION/Voxi-$VERSION.dmg\" $SIGNATURE type=\"application/octet-stream\"/>\\
+        </item>"
+# Newest item goes directly under the marker; the feed stays newest-first.
+grep -q "<!-- release.sh inserts items below -->" "$ROOT/appcast.xml" || die "appcast.xml marker comment missing"
+sed -i '' "s|<!-- release.sh inserts items below -->|<!-- release.sh inserts items below -->\\
+$ITEM|" "$ROOT/appcast.xml"
+xmllint --noout "$ROOT/appcast.xml" 2>/dev/null || die "appcast.xml is not valid XML after insert"
+log "appcast item added (sparkle:version=$BUILD_NO)"
+
+# --- 9. Summary --------------------------------------------------------------
 log "release build complete"
 print "  artifact : $DMG"
 print "  size     : $(du -h "$DMG" | cut -f1)"
 print "  sha256   : $(shasum -a 256 "$DMG" | cut -d' ' -f1)"
 print ""
 print "Next (after the manual verification checklist in docs/RELEASING.md):"
+print "  git add appcast.xml && git commit -m 'appcast: v$VERSION' && git push   # BEFORE tagging — the feed is served from main"
 print "  git tag v$VERSION && git push origin v$VERSION"
 print "  gh release create v$VERSION '$DMG' --repo trickycdm/voxi --title 'Voxi $VERSION' --generate-notes"
 print "  URL=\$(gh release view v$VERSION --repo trickycdm/voxi --json assets -q '.assets[0].url')"

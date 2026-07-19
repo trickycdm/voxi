@@ -37,7 +37,7 @@ Image-model output (icons, artwork) often fakes transparency by painting a check
 
 - **Hand-written token extensions, no codegen** — ~20 colors don't justify a SwiftGen dependency (`CODING_CONVENTIONS.md` dependency hygiene); the single-file extension is the drift guard.
 - **Chip fills are dedicated `Bg` color sets with baked alpha**; chip foregrounds reuse semantic tokens (dispatched has its own text set). Change the mapping only in the `CardStatus` extension.
-- **`voxiCommandTint` aliases `VoxiSuccess`** deliberately: under the pinned-dark pill it always resolves to mint `#7FD6B8`, distinguishing command mode from butter dictation without a new color set.
+- **`voxiCommandTint` is the dedicated `VoxiCommand` signal red** (dark `#E4574A`, light `#C6473C`; 2026-07-19 — previously an alias of `VoxiSuccess` mint, which proved too subtle to notice). It is command mode's identity color: pill waveform, dot, and coachline keyline while recording a command. It is not `voxiDanger` and must not be — status colors belong to status.
 - **Pit Wall rail (2026-07-18):** the Hub's `NavigationSplitView` sidebar is replaced by a custom fixed-width rail (`HubRailView`), which sidesteps the macOS-14 "sidebar resists `.background`" limitation entirely. The Hub window uses `.windowStyle(.hiddenTitleBar)` — traffic lights overlay the rail (40 pt top padding clears them); each pane opens with a `HubPaneHeader` hosting the controls the system toolbar used to (search, Clear All, Add Term). Min window width 820 = rail 196 + History split minimums.
 - **Window chrome** (transparent titlebar + Paper background) is set at window creation only; the one-window-per-lifetime invariants in `MACOS_PLATFORM.md` are untouched.
 

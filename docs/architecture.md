@@ -16,7 +16,7 @@ One voice session runs end-to-end through `DictationCoordinator`: a hotkey chord
 
 | Module | Owns | Key seam |
 |---|---|---|
-| App | Composition root (`AppState`), `@main` scene, `DictationCoordinator`, headless `CLIMode` | Optional-closure hooks wire components |
+| App | Composition root (`AppState`), `@main` scene, `DictationCoordinator`, headless `CLIMode`, `UpdaterController` (Sparkle 2, Release-only) | Optional-closure hooks wire components |
 | Capture | `AVAudioEngine` mic tap → 16 kHz mono Float32 + ~30 Hz levels | `CapturedAudio` out; one consumer per instance |
 | Hotkeys | The single `CGEventTap`, chord persistence, permission polling | Pure `ChordStateMachine`; `AsyncStream<HotkeyEvent>` |
 | Transcription | Pluggable ASR: Parakeet (default), WhisperKit | `ASREngine` protocol + `ASREngineRegistry` |
@@ -56,6 +56,9 @@ Extension points: a new speech engine, refiner backend, or card executor is one 
 | 2026-07-12 | History list day-grouping: pure `HistoryDayGrouping` helper | Merges only adjacent same-day entries; FTS5 search results stay ungrouped and relevance-ranked |
 | 2026-07-12 | CardStatus chip colors map to tokens in QueueView, unit-tested | Semantic color tokens decouple design from layout; status → color mapping moves from implicit to explicit |
 | 2026-07-18 | Hub sidebar replaced by the Pit Wall rail; `.hiddenTitleBar` window | NavigationSplitView's sidebar can't take a brand ground on macOS 14 and its toolbar/search chrome fought the full-bleed design. Rail pins dark via `.environment(\.colorScheme, .dark)` so existing adaptive tokens resolve Night Race (two new tokens only: `voxiRacing`, `voxiRailSelection`); relocated pane controls live in `HubPaneHeader`; min window width 820 (rail 196 + History split 620) |
+| 2026-07-19 | Updater = Sparkle 2, GitHub-only appcast (`appcast.xml` on `main`, enclosures = release assets) | Zero site-repo coupling; repo is public so the raw URL is a free CDN feed; sandbox is off so no XPC complexity. EdDSA key in login Keychain only; Release-only start (Debug shares bundle id and must not write Sparkle defaults) |
+| 2026-07-19 | Dispatch stall watchdog is inactivity-based (300 s silence), not a wall-clock cap | Long claude runs are legitimate; a healthy run streams events continuously. Terminates via the existing cancel path so completion semantics stay single-pathed |
+| 2026-07-19 | Command mode gets its own `VoxiCommand` signal-red token (was: alias of Success mint) | The mint tint proved invisible in practice ("queue is broken" report was a missed chord); status colors stay reserved for status per the design system |
 | 2026-07-18 | Secure-input refusal is holder-aware, not flag-global | `IsSecureEventInputEnabled()` is machine-global; MDM agents hold it session-long, which killed all insertion on a managed Mac. `SecureInput` reads the holder PID from IORegistry `IOConsoleUsers` (must use `IORegistryGetRootEntry`; the `IOService:/` path form lacks the property) and refuses only when the holder is the target app or unidentifiable. `AXSecureTextField` subrole still always refuses |
 
 ## Open Items

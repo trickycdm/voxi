@@ -86,6 +86,26 @@ enum QueueLogic {
         }
     }
 
+    /// Why dispatch is unavailable for a queued card, in user-facing words —
+    /// nil when dispatch is allowed, or when the card isn't queued (the
+    /// status chip already tells that story). Mirrors `canDispatch`.
+    static func dispatchBlocker(
+        status: CardStatus,
+        prompt: String,
+        params: [String: String],
+        specs: [DispatcherParamSpec]
+    ) -> String? {
+        guard status == .queued else { return nil }
+        guard !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return "Write a prompt to dispatch"
+        }
+        let missing = specs.filter { spec in
+            spec.required && (params[spec.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        guard !missing.isEmpty else { return nil }
+        return "Set \(missing.map(\.label).joined(separator: ", ")) to dispatch"
+    }
+
     /// IDs a "Run All" should dispatch: queued cards that pass the dispatch
     /// gate, oldest first. Cards that fail the gate (blank prompt, missing
     /// params, unknown dispatcher) are skipped — left queued, never failed.

@@ -260,6 +260,14 @@ private func parse(_ line: String) -> [ClaudeEvent] {
         #expect(outcome.resultText?.contains("$0.1657") == true)
     }
 
+    @Test func stalledRunReportsWatchdogTermination() {
+        let outcome = ClaudeCodeDispatcher.outcome(
+            exitCode: 143, result: nil, stderrTail: "", stalledAfter: 300)
+        #expect(!outcome.success)
+        #expect(outcome.resultText?.contains("stalled — no output for 300s") == true)
+        #expect(outcome.resultText?.contains("cancelled") != true)
+    }
+
     @Test func statsIncludePermissionDenials() {
         let result = ClaudeRunResult(
             subtype: "success", isError: false, resultText: "ok",
@@ -406,6 +414,72 @@ private func parse(_ line: String) -> [ClaudeEvent] {
             versionOutput: { _ in nil }, loginShellLookup: { nil }, fileExists: { _ in false })
         #expect(locator.cached() == nil)
         #expect(locator.locate() == nil)
+    }
+
+    @Test func cachedEntryReprobesTheSelfUpdatedVersion() throws {
+        // The CLI self-updates in place: stored 2.1.200, binary now 2.1.215.
+        let (defaults, cleanup) = try makeDefaults()
+        defer { cleanup() }
+        defaults.set("/good/claude", forKey: ClaudeBinaryLocator.pathDefaultsKey)
+        defaults.set("2.1.200", forKey: ClaudeBinaryLocator.versionDefaultsKey)
+        let locator = ClaudeBinaryLocator(
+            defaults: defaults, probePaths: [],
+            versionOutput: { _ in "2.1.215 (Claude Code)" }, loginShellLookup: { nil },
+            fileExists: { _ in true })
+        #expect(locator.cached() == ClaudeBinaryLocator.Binary(path: "/good/claude", version: "2.1.215"))
+        #expect(defaults.string(forKey: ClaudeBinaryLocator.versionDefaultsKey) == "2.1.215")
+    }
+
+    @Test func cachedEntryRejectedWhenBinaryDowngradedBelowRequiredMajor() throws {
+        // A cached path replaced by a stale 1.x install must not be trusted;
+        // locate() falls through to a full probe of the known paths.
+        let (defaults, cleanup) = try makeDefaults()
+        defer { cleanup() }
+        defaults.set("/swapped/claude", forKey: ClaudeBinaryLocator.pathDefaultsKey)
+        defaults.set("2.1.200", forKey: ClaudeBinaryLocator.versionDefaultsKey)
+        let versions = [
+            "/swapped/claude": "1.0.113 (Claude Code)",
+            "/good/claude": "2.1.215 (Claude Code)",
+        ]
+        let locator = ClaudeBinaryLocator(
+            defaults: defaults, probePaths: ["/good/claude"],
+            versionOutput: { versions[$0] }, loginShellLookup: { nil },
+            fileExists: { _ in true })
+        #expect(locator.cached() == nil)
+        #expect(locator.locate() == ClaudeBinaryLocator.Binary(path: "/good/claude", version: "2.1.215"))
+    }
+}
+
+// MARK: - Stall watchdog
+
+@Suite struct ClaudeCodeDispatcherWatchdogTests {
+    /// A fake "claude" that prints nothing and hangs; the watchdog must
+    /// SIGTERM it and the run must resolve as a failed, stalled outcome.
+    @Test(.timeLimit(.minutes(1))) func silentRunIsTerminatedByWatchdog() async throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("voxi-watchdog-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let script = dir.appendingPathComponent("hanging-claude")
+        try "#!/bin/sh\nsleep 600\n".write(to: script, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
+
+        let suite = "voxi-test-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let locator = ClaudeBinaryLocator(
+            defaults: defaults, probePaths: [script.path],
+            versionOutput: { _ in "2.1.200 (Claude Code)" }, loginShellLookup: { nil },
+            fileExists: { FileManager.default.isExecutableFile(atPath: $0) })
+
+        let dispatcher = ClaudeCodeDispatcher(locator: locator, stallTimeout: 1, watchdogInterval: 0.2)
+        let result = try await dispatcher.execute(
+            prompt: "irrelevant",
+            params: ["workingDirectory": dir.path],
+            onEvent: { _ in })
+        #expect(!result.success)
+        #expect(result.exitCode == 143)   // SIGTERM, shell convention
+        #expect(result.resultText?.contains("stalled") == true)
     }
 }
 

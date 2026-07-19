@@ -32,5 +32,11 @@
 	<string>Voxi needs the microphone to transcribe your dictation.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUFeedURL</key>
+	<string>https://raw.githubusercontent.com/trickycdm/voxi/main/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>lgo/WcCmoBkJs/6yFjggrqIdFO0nmi5rzLHhlu1QLZE=</string>
 </dict>
 </plist>

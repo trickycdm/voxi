@@ -42,6 +42,7 @@ Data flow, module table, decision log: [`docs/architecture.md`](docs/architectur
 - **Extension points are protocol + registry line:** new ASR engine, refiner backend, or card executor = one file + one registry entry, nothing else. If a change needs more, the seam is being broken.
 - **Fallbacks never break dictation:** refiner falls back to rules on any error; insertion degrades tier-by-tier. The user's words must land.
 - **Signing is never ad-hoc; the identity is per-config** (both team `F7H963S3B4`, set in `project.yml`): Debug = "Apple Development" (daily TCC grants key off it and must survive rebuilds), Release = "Developer ID Application" + hardened runtime (distribution; `Scripts/release.sh`). Never publish a DMG that did not come out of a green release.sh run — the site claims "notarised by Apple".
+- **Updates ship via Sparkle 2** (Release builds only — Debug shares the bundle id and must not start the updater): `appcast.xml` on `main` is the live feed, items are EdDSA-signed and inserted only by release.sh, and `CFBundleVersion` must bump monotonically or updaters can't see the release (`docs/RELEASING.md`).
 
 ## Tooling
 

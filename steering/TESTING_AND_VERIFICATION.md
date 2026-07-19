@@ -32,6 +32,15 @@
 3. **Self-review the diff** with hostile inputs in mind: edge cases, error paths at system boundaries, isolation annotations on new closures, duplication of existing helpers.
 4. **Prove the feature works, not just the code.** Pipeline changes: run the CLI harness. UI/capture/hotkey changes: run the app and exercise the flow (dictate, dispatch, watch the pill). If a step needs a human (permission grant, live mic), list it explicitly as a manual step — never claim it verified.
 
+## Diagnosing reported bugs
+
+Check the runtime surfaces before deep code exploration — they carry ground truth the code can't (2026-07-19: a "broken command queue" was diagnosed in minutes from the DB alone; it was a missed chord, not a bug):
+
+- **The database**: `sqlite3 -readonly "~/Library/Application Support/Voxi/voxi.sqlite"` — card statuses, history rows, and their timestamps say what actually happened.
+- **Preferences**: `defaults read com.colin.voxi` — bindings, refiner config, cached claude path/version.
+- **The CLI harness**: `--transcribe/--dictate/--command` reproduces the pipeline headlessly; a green harness run isolates the fault to the interactive layer (chords, mic, TCC).
+- **The literal symptom**: ask what the user actually sees before ranking hypotheses — "times out" turned out to mean "text appears at the cursor".
+
 ## Review focus
 
 - **Logic correctness** — walk edge cases, not the happy path.

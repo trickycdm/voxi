@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Sparkle update feed. Served raw from GitHub (SUFeedURL in project.yml):
+     https://raw.githubusercontent.com/trickycdm/voxi/main/appcast.xml
+     Items are inserted by Scripts/release.sh (stage 8) — newest first, one
+     per release, enclosure pointing at the GitHub release DMG asset.
+     Commit + push this file BEFORE tagging the release. -->
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+    <channel>
+        <title>Voxi</title>
+        <link>https://raw.githubusercontent.com/trickycdm/voxi/main/appcast.xml</link>
+        <description>Voxi updates</description>
+        <language>en</language>
+        <!-- release.sh inserts items below -->
+        <item>
+            <title>Voxi 0.1.0</title>
+            <pubDate>Sat, 19 Jul 2026 09:00:00 +0100</pubDate>
+            <sparkle:version>1</sparkle:version>
+            <sparkle:shortVersionString>0.1.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/trickycdm/voxi/releases/download/v0.1.0/Voxi-0.1.0.dmg" sparkle:edSignature="Iv//yinppbiqlVeC4P+uO+4pv+Fidee9o0jQx7LOH5NVklIoND0z4JG1oWaGHGoB4fwEMyXnP/v1ANuzJP2WBQ==" length="10365425" type="application/octet-stream"/>
+        </item>
+    </channel>
+</rss>

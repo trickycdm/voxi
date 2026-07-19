@@ -18,6 +18,8 @@
 - **Success = exit 0 ∧ a `result` event was seen ∧ `!is_error`.** Subtype can read "success" with `is_error` true on API errors; SIGTERM → exit 143 with **no** result event = cancelled/crashed, not failed-with-result.
 - **Binary discovery order is load-bearing:** real paths (`~/.local/bin`, homebrew, `/usr/local/bin`) first, login-shell `which claude` **LAST** — the login shell resolves to a stale 1.0.113 on the dev machine. Everything `--version`-validated, major ≥ 2.
 - `execute` must honor task cancellation: SIGTERM, then SIGKILL after 3 s grace.
+- **Stall watchdog:** no stdout/stderr activity for `stallTimeout` (default 300 s) → the run is terminated through the cancel path and fails with a "stalled" result. Silence is the failure signal; wall-clock duration is not.
+- **The cached binary is re-validated on every `locate()`** — the CLI self-updates in place, so the stored version re-probes via `--version` and a downgraded path falls through to a full probe.
 
 ## Gotchas
 

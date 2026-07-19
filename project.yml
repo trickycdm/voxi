@@ -20,6 +20,9 @@ packages:
   GRDB:
     url: https://github.com/groue/GRDB.swift
     from: 7.11.1
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    from: 2.7.0
 targets:
   Voxi:
     type: application
@@ -36,6 +39,8 @@ targets:
         product: FluidAudio
       - package: GRDB
         product: GRDB
+      - package: Sparkle
+        product: Sparkle
     info:
       path: Resources/Info.plist
       properties:
@@ -49,6 +54,11 @@ targets:
         NSMicrophoneUsageDescription: Voxi needs the microphone to transcribe your dictation.
         NSAppleEventsUsageDescription: Voxi uses Apple Events to insert dictated text into other applications.
         NSPrincipalClass: NSApplication
+        # Sparkle: feed lives in this repo (public), enclosures on GitHub
+        # release assets. Private EdDSA key is in Colin's login Keychain.
+        SUFeedURL: https://raw.githubusercontent.com/trickycdm/voxi/main/appcast.xml
+        SUPublicEDKey: lgo/WcCmoBkJs/6yFjggrqIdFO0nmi5rzLHhlu1QLZE=
+        SUEnableAutomaticChecks: true
     entitlements:
       path: Resources/Voxi.entitlements
       properties:

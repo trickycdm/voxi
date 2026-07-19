@@ -48,13 +48,22 @@ struct ClaudeBinaryLocator: @unchecked Sendable {
     }
 
     /// Persisted binary from a previous probe, if it still exists on disk.
+    /// The version is re-probed on every call — the CLI self-updates in place,
+    /// so a stored version string silently goes stale (2.1.200 → 2.1.215), and
+    /// a path can even be downgraded below the required major. A cached path
+    /// that no longer validates returns nil so `locate()` falls through to a
+    /// full probe. Cost is one `--version` spawn per dispatch — noise next to
+    /// a multi-second claude run.
     func cached() -> Binary? {
         guard
             let path = defaults.string(forKey: Self.pathDefaultsKey),
-            let version = defaults.string(forKey: Self.versionDefaultsKey),
-            fileExists(path)
+            fileExists(path),
+            let output = versionOutput(path),
+            let parsed = Self.parseVersion(output),
+            parsed.major >= Self.requiredMajorVersion
         else { return nil }
-        return Binary(path: path, version: version)
+        defaults.set(parsed.display, forKey: Self.versionDefaultsKey)
+        return Binary(path: path, version: parsed.display)
     }
 
     /// Cached binary if available, else a fresh probe.

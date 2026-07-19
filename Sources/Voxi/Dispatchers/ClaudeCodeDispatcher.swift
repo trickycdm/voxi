@@ -31,10 +31,24 @@ struct ClaudeCodeDispatcher: Dispatcher {
         ]
     }
 
-    private let locator: ClaudeBinaryLocator
+    /// No stream activity for this long → the run is treated as stalled and
+    /// terminated. Claude runs can legitimately take a long time, but a
+    /// healthy run streams events continuously — silence is the failure
+    /// signal (permission wait, auth hang, dead MCP server, …).
+    static let defaultStallTimeout: TimeInterval = 300
 
-    init(locator: ClaudeBinaryLocator = ClaudeBinaryLocator()) {
+    private let locator: ClaudeBinaryLocator
+    private let stallTimeout: TimeInterval
+    private let watchdogInterval: TimeInterval
+
+    init(
+        locator: ClaudeBinaryLocator = ClaudeBinaryLocator(),
+        stallTimeout: TimeInterval = ClaudeCodeDispatcher.defaultStallTimeout,
+        watchdogInterval: TimeInterval = 30
+    ) {
         self.locator = locator
+        self.stallTimeout = stallTimeout
+        self.watchdogInterval = watchdogInterval
     }
 
     func execute(
@@ -113,7 +127,8 @@ struct ClaudeCodeDispatcher: Dispatcher {
                         var out = Self.outcome(
                             exitCode: exitCode,
                             result: s.result,
-                            stderrTail: Self.tail(of: s.stderr))
+                            stderrTail: Self.tail(of: s.stderr),
+                            stalledAfter: s.stalled ? stallTimeout : nil)
                         out.sessionID = s.sessionID
                         return out
                     }
@@ -126,7 +141,7 @@ struct ClaudeCodeDispatcher: Dispatcher {
                     let chunk = handle.availableData
                     let events: [ClaudeEvent] = state.withLock { s in
                         let parsed = chunk.isEmpty ? s.parser.finish() : s.parser.consume(chunk)
-                        if chunk.isEmpty { s.stdoutDone = true }
+                        if chunk.isEmpty { s.stdoutDone = true } else { s.lastActivity = .now() }
                         for event in parsed {
                             switch event {
                             case .result(let runResult): s.result = runResult
@@ -150,6 +165,7 @@ struct ClaudeCodeDispatcher: Dispatcher {
                             s.stderrDone = true
                         } else {
                             s.stderr.append(chunk)
+                            s.lastActivity = .now()
                         }
                     }
                     if chunk.isEmpty {
@@ -166,8 +182,36 @@ struct ClaudeCodeDispatcher: Dispatcher {
                     maybeFinish()
                 }
 
+                // Stall watchdog: periodically checks stream activity; a run
+                // that stays silent past stallTimeout is terminated through
+                // the same SIGTERM/SIGKILL path as a user cancel, and the
+                // normal EOF+exit completion then resumes with a stall
+                // message. Rescheduling stops once the process has exited.
+                @Sendable func scheduleWatchdog() {
+                    DispatchQueue.global().asyncAfter(deadline: .now() + watchdogInterval) {
+                        enum Verdict { case done, stalled, healthy }
+                        let verdict: Verdict = state.withLock { s in
+                            guard s.exitCode == nil else { return .done }
+                            let silentNanos = DispatchTime.now().uptimeNanoseconds - s.lastActivity.uptimeNanoseconds
+                            guard Double(silentNanos) / 1_000_000_000 > stallTimeout else { return .healthy }
+                            s.stalled = true
+                            return .stalled
+                        }
+                        switch verdict {
+                        case .done:
+                            break
+                        case .stalled:
+                            onEvent(.log("no output for \(Int(stallTimeout))s — terminating stalled run"))
+                            box.cancel()
+                        case .healthy:
+                            scheduleWatchdog()
+                        }
+                    }
+                }
+
                 do {
                     try box.run()
+                    scheduleWatchdog()
                 } catch {
                     stdoutPipe.fileHandleForReading.readabilityHandler = nil
                     stderrPipe.fileHandleForReading.readabilityHandler = nil
@@ -219,10 +263,19 @@ struct ClaudeCodeDispatcher: Dispatcher {
     /// Success rule (verified against CLI 2.1.200): exit 0 AND a result event
     /// was seen AND is_error is false. Note subtype can be "success" while
     /// is_error is true (API errors), and a SIGTERM'd run emits NO result
-    /// event at all — that is "cancelled or crashed".
-    static func outcome(exitCode: Int, result: ClaudeRunResult?, stderrTail: String) -> DispatchResult {
+    /// event at all — that is "cancelled or crashed" (or a watchdog stall,
+    /// when `stalledAfter` is set).
+    static func outcome(
+        exitCode: Int, result: ClaudeRunResult?, stderrTail: String,
+        stalledAfter: TimeInterval? = nil
+    ) -> DispatchResult {
         guard let result else {
-            var text = "cancelled or crashed (exit \(exitCode))"
+            var text: String
+            if let stalledAfter {
+                text = "stalled — no output for \(Int(stalledAfter))s, terminated (exit \(exitCode))"
+            } else {
+                text = "cancelled or crashed (exit \(exitCode))"
+            }
             if !stderrTail.isEmpty { text += " — \(stderrTail)" }
             return DispatchResult(success: false, exitCode: exitCode, resultText: text)
         }
@@ -276,6 +329,10 @@ private struct RunState: Sendable {
     var stdoutDone = false
     var stderrDone = false
     var exitCode: Int?
+    /// Monotonic clock of the last stdout/stderr chunk; the watchdog compares
+    /// against this to decide a run has gone silent.
+    var lastActivity: DispatchTime = .now()
+    var stalled = false
 }
 
 /// Process is not Sendable; all access is funneled through this box whose

@@ -30,12 +30,14 @@ struct VoxiApp: App {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let appState = AppState()
+    let updater = UpdaterController()
     private var onboardingWindow: NSWindow?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         if CLIMode.runIfRequested() { return }
         NSApp.setActivationPolicy(.accessory)
         appState.start()
+        updater.start()
         if OnboardingModel.shouldShow() {
             showOnboarding()
         }
@@ -87,6 +89,15 @@ struct MenuBarContent: View {
             Divider()
         }
 
+        // Read-only chord hints; bare Text renders as a disabled row (same
+        // pattern as the error row below). Live-updates via @Observable when
+        // a chord is rebound in the Hub.
+        Text("Push to talk: \(ChordSymbols.render(appState.hotkeys.pushToTalkBinding)) (hold)")
+        Text("Hands-free: \(ChordSymbols.render(appState.hotkeys.toggleBinding))")
+        Text("Command mode: \(ChordSymbols.render(appState.hotkeys.commandBinding)) (hold)")
+
+        Divider()
+
         Button("Open Hub") {
             openWindow(id: "hub")
             NSApp.activate(ignoringOtherApps: true)
@@ -103,6 +114,14 @@ struct MenuBarContent: View {
         Button("Run Onboarding Again") {
             (NSApp.delegate as? AppDelegate)?.showOnboarding()
         }
+
+        #if !DEBUG
+        // Release-only: the Debug build never starts the updater (shared
+        // bundle id — see UpdaterController).
+        Button("Check for Updates…") {
+            (NSApp.delegate as? AppDelegate)?.updater.checkForUpdates()
+        }
+        #endif
 
         if let error = appState.lastError {
             Divider()

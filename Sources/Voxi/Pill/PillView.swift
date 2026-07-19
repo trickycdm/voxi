@@ -34,7 +34,16 @@ struct PillView: View {
             .overlay(Capsule().strokeBorder(Color.voxiHairline, lineWidth: 1))
             // Coachline: the pill's one ornament — a cream keyline inset just
             // inside the edge, like hand-painted bodywork. Pill only.
-            .overlay(Capsule().strokeBorder(Color.voxiCoachline, lineWidth: 1).padding(3))
+            // Command mode takes over the keyline so the whole outline reads
+            // red at a glance, not just the waveform.
+            .overlay(Capsule().strokeBorder(coachlineColor, lineWidth: 1).padding(3))
+    }
+
+    private var coachlineColor: Color {
+        if case .recording(mode: .command, level: _) = controller.state {
+            return .voxiCommandTint
+        }
+        return .voxiCoachline
     }
 
     @ViewBuilder
@@ -90,7 +99,8 @@ struct PillView: View {
     }
 
     /// Waveform + dot tint. Butter is the live dictation color; command mode
-    /// reads as mint (the dark-resolved VoxiSuccess — the panel pins darkAqua).
+    /// reads as signal red (VoxiCommand — the panel pins darkAqua, so the
+    /// dark variant shows).
     private func tint(for mode: PillState.RecordingMode) -> Color {
         switch mode {
         case .dictation: .voxiLive

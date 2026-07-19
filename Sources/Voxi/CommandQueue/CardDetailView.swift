@@ -237,6 +237,15 @@ struct CardDetailView: View {
                 }
                 .keyboardShortcut(.defaultAction)
                 .disabled(!canDispatch)
+                // Two cards once sat stuck queued because nothing said why
+                // the button was grey — always name the blocker.
+                if let blocker = QueueLogic.dispatchBlocker(
+                    status: card.status, prompt: promptDraft, params: params, specs: paramSpecs
+                ) {
+                    Text(blocker)
+                        .font(.callout)
+                        .foregroundStyle(Color.voxiInk3)
+                }
             }
             if card.status == .dispatched || card.status == .running {
                 Button("Cancel", role: .destructive) {

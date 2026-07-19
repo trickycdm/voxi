@@ -214,6 +214,22 @@ private func makeModel() throws -> (QueueModel, CardStore) {
         #expect(QueueLogic.canDispatch(status: .queued, prompt: "Do it.", params: params, specs: specs))
     }
 
+    @Test func dispatchBlockerNamesTheMissingRequirement() {
+        // Mirrors canDispatch: nil exactly when dispatch is allowed.
+        #expect(QueueLogic.dispatchBlocker(
+            status: .queued, prompt: "Do it.", params: ["workingDirectory": "/tmp"], specs: specs) == nil)
+        #expect(QueueLogic.dispatchBlocker(
+            status: .queued, prompt: "Do it.", params: [:], specs: specs) == "Set Working directory to dispatch")
+        #expect(QueueLogic.dispatchBlocker(
+            status: .queued, prompt: "Do it.", params: ["workingDirectory": "   "], specs: specs) == "Set Working directory to dispatch")
+        #expect(QueueLogic.dispatchBlocker(
+            status: .queued, prompt: "  \n ", params: ["workingDirectory": "/tmp"], specs: specs) == "Write a prompt to dispatch")
+        // Non-queued statuses tell their story via the status chip, not here.
+        for status in CardStatus.allCases where status != .queued {
+            #expect(QueueLogic.dispatchBlocker(status: status, prompt: "", params: [:], specs: specs) == nil)
+        }
+    }
+
     @Test func statusChipMapping() {
         // Fills come from the status token layer (steering/DESIGN_SYSTEM.md)…
         #expect(CardStatus.queued.chipBackground == Color("VoxiStatusQueuedBg"))

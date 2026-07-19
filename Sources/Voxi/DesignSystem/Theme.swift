@@ -38,9 +38,10 @@ extension Color {
     static let voxiLive = Color("VoxiLive")
     // The pill's inset keyline; used nowhere else.
     static let voxiCoachline = Color("VoxiCoachline")
-    // Command-mode waveform tint. Aliases VoxiSuccess deliberately: the pill is
-    // pinned to dark appearance, so this always resolves to the mint variant.
-    static let voxiCommandTint = Color("VoxiSuccess")
+    // Command-mode identity: signal red, distinct from voxiDanger (status
+    // colors belong to status). The pill pins dark appearance, so the dark
+    // variant is the one that shows.
+    static let voxiCommandTint = Color("VoxiCommand")
 
     // The Pit Wall rail (Hub sidebar) — racing green in BOTH appearances; the
     // rail pins .environment(\.colorScheme, .dark) so adaptive tokens inside

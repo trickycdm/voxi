@@ -26,6 +26,16 @@
 - Grants gone stale anyway? `tccutil reset Accessibility com.colin.voxi` (same for `Microphone`), then re-grant via onboarding's live re-checks.
 - **`kAXTrustedCheckOptionPrompt` is a mutable ObjC global and not concurrency-safe** — the hardcoded literal string is used instead (`HotkeyController`). Leave it that way.
 
+## Distribution / notarisation
+
+The release pipeline is `Scripts/release.sh X.Y.Z`; the runbook is `docs/RELEASING.md`. The load-bearing gotchas, learned the hard way and encoded in the script:
+
+- **Sign the DMG itself, don't just notarise it.** `hdiutil create` emits an *unsigned* image; Gatekeeper's `spctl -a -t open --context context:primary-signature` rejects an unsigned DMG even after a successful notarisation. `codesign --sign "Developer ID Application: …"` the `.dmg` before submitting it.
+- **Notarise + staple twice — the app, then the DMG.** Staple the `.app` first, build the DMG from the stapled app, then notarise + staple the DMG. A single DMG submission can only staple the DMG (read-only filesystem), leaving the app inside needing an online ticket lookup — offline first-launch then fails.
+- **`grep -q` on a pipe dies under `set -o pipefail`.** `codesign -dvv "$APP" | grep -q …` SIGPIPEs the producer when grep exits early, so the pipeline returns non-zero even on a match and false-fails the gate. Capture to a variable first (`INFO="$(codesign -dvv … 2>&1)"; grep -q … <<< "$INFO"`).
+- **Release is Manual signing style** (`project.yml` `configs.Release`): Developer ID with unrestricted entitlements needs no provisioning profile, and Automatic export can demand an interactive Apple ID sign-in mid-script. The `Scripts/exportOptions.plist` pins method `developer-id`, the team, and the cert.
+- **Hardened runtime did not need any extra entitlements.** The existing set (non-sandboxed, apple-events, audio-input) is enough; CoreML model load, the event tap, AX insertion, and the `claude` subprocess spawn all work under it (verified via the CLI harness on the notarised binary). Add `com.apple.security.cs.*` escape hatches only if a real runtime failure appears — a minimal entitlement set is what Gatekeeper and notarisation prefer.
+
 ## Realtime audio
 
 - **The tap thread touches only the lock-protected `CaptureSession`.** No allocation, no logging, no MainActor hops per buffer — a single smoothed `Float` level crosses to the MainActor at ~30 Hz, nothing else.

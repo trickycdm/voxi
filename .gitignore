@@ -11,3 +11,6 @@ Tests/Fixtures/audio/*.wav
 .claude/worktrees/
 plans/.tmp/
 dist/
+
+# Plans hold internal planning detail — kept local only, never committed (solo repo)
+plans/

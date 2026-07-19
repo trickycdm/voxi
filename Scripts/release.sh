@@ -95,6 +95,9 @@ ditto "$APP" "$STAGING/Voxi.app"
 ln -s /Applications "$STAGING/Applications"
 hdiutil create -volname "Voxi" -srcfolder "$STAGING" -ov -format UDZO -quiet \
   "$DIST/Voxi-$VERSION.dmg"
+# hdiutil emits an UNSIGNED image; Gatekeeper's primary-signature assessment
+# needs the DMG itself signed, not just notarised.
+codesign --sign "Developer ID Application: Colin Mackenzie (F7H963S3B4)" "$DIST/Voxi-$VERSION.dmg"
 
 # --- 6. Notarise + staple the DMG --------------------------------------------
 log "notarise DMG (submission 2/2)"

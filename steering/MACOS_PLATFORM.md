@@ -21,7 +21,8 @@
 
 ## TCC / permissions
 
-- **TCC grants key off the signing identity + bundle id.** The project signs with a real Apple Development identity (team `F7H963S3B4`, set in `project.yml` — **not** ad-hoc `-`) precisely so Accessibility/Microphone grants survive rebuilds. Never switch back to ad-hoc signing; never change `com.colin.voxi` casually.
+- **TCC grants key off the signing identity + bundle id.** Signing is per-config in `project.yml` (both team `F7H963S3B4`, **never** ad-hoc `-`): Debug = "Apple Development" — daily grants key off this identity and survive rebuilds; Release = "Developer ID Application" + hardened runtime for distribution (`Scripts/release.sh`). Never change the Debug identity or `com.colin.voxi` casually.
+- **The two identities share one bundle id**, so running a Release build on the dev machine presents a different identity to TCC — expect Accessibility/Microphone/Automation re-prompts, and switching between Debug and Release builds can flap grants.
 - Grants gone stale anyway? `tccutil reset Accessibility com.colin.voxi` (same for `Microphone`), then re-grant via onboarding's live re-checks.
 - **`kAXTrustedCheckOptionPrompt` is a mutable ObjC global and not concurrency-safe** — the hardcoded literal string is used instead (`HotkeyController`). Leave it that way.
 

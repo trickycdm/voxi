@@ -64,6 +64,6 @@ Extension points: a new speech engine, refiner backend, or card executor is one 
 - **Voice follow-up on a dispatched card** (dictate the next turn of a resumed session) — deferred; v2 ships button-based follow-up only.
 - **Auto-open queue on card creation may become a setting** if it proves intrusive (v2 M2 ships it unconditionally).
 - **Menu-bar badge for running/finished cards** — considered and rejected (2026-07-11).
-- **LLM API keys live in UserDefaults, not Keychain** — accepted v1 tradeoff; revisit if the app is ever distributed.
+- **LLM API keys live in UserDefaults, not Keychain** — accepted v1 tradeoff. The app is now publicly distributed (2026-07-19), so this bill is due: parked as its own piece of work, not blocking the first release (the key is optional and user-supplied).
 - **Clipboard restore is a user toggle** — macOS 15.4+ shows pasteboard-read alerts; accepted tradeoff.
 - **No CI** — the test suite, the strict-concurrency compile gate, and review are the only backstops today; invariants in `CLAUDE.md` are convention-enforced.

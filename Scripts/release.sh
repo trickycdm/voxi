@@ -57,11 +57,15 @@ xcodebuild -exportArchive -archivePath "$DIST/Voxi.xcarchive" \
 # --- 3. Verify signature -----------------------------------------------------
 log "verify signature"
 codesign --verify --deep --strict --verbose=2 "$APP"
-codesign -dvv "$APP" 2>&1 | grep -q "Authority=Developer ID Application: Colin Mackenzie (F7H963S3B4)" \
+# Capture once, grep the variable: `codesign | grep -q` under pipefail dies on
+# grep's early exit (SIGPIPE) even when the pattern matched.
+SIGN_INFO="$(codesign -dvv "$APP" 2>&1)"
+grep -q "Authority=Developer ID Application: Colin Mackenzie (F7H963S3B4)" <<< "$SIGN_INFO" \
   || die "app is not signed with the Developer ID identity"
-codesign -dvv "$APP" 2>&1 | grep -q "flags=0x10000(runtime)" \
+grep -q "flags=0x10000(runtime)" <<< "$SIGN_INFO" \
   || die "hardened runtime flag missing"
-codesign -d --entitlements :- "$APP" 2>/dev/null | grep -q "device.audio-input" \
+ENTITLEMENTS="$(codesign -d --entitlements :- "$APP" 2>/dev/null)"
+grep -q "device.audio-input" <<< "$ENTITLEMENTS" \
   || die "entitlements did not survive export"
 BUILT="$(defaults read "$APP/Contents/Info" CFBundleShortVersionString)"
 [[ "$BUILT" == "$VERSION" ]] || die "built app reports $BUILT, expected $VERSION"
@@ -102,9 +106,10 @@ xcrun stapler validate "$DIST/Voxi-$VERSION.dmg"
 
 # --- 7. Gatekeeper assessment ------------------------------------------------
 log "Gatekeeper assessment"
-spctl -a -t exec -vv "$APP" 2>&1 | grep -q "accepted" || die "spctl rejected the app"
-spctl -a -t open --context context:primary-signature -vv "$DIST/Voxi-$VERSION.dmg" 2>&1 \
-  | grep -q "accepted" || die "spctl rejected the DMG"
+APP_ASSESS="$(spctl -a -t exec -vv "$APP" 2>&1 || true)"
+grep -q "accepted" <<< "$APP_ASSESS" || die "spctl rejected the app: $APP_ASSESS"
+DMG_ASSESS="$(spctl -a -t open --context context:primary-signature -vv "$DIST/Voxi-$VERSION.dmg" 2>&1 || true)"
+grep -q "accepted" <<< "$DMG_ASSESS" || die "spctl rejected the DMG: $DMG_ASSESS"
 
 # --- 8. Summary --------------------------------------------------------------
 DMG="$DIST/Voxi-$VERSION.dmg"

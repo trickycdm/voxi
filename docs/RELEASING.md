@@ -26,7 +26,7 @@ Descriptive runbook for shipping a signed, notarised DMG to the marketing site. 
    gh workflow run publish-dmg.yml --repo trickycdm/voxi-marketing-site -F dmg_url="$URL" -F version=X.Y.Z
    ```
    The workflow uploads to R2 as the stable `Voxi.dmg` key plus `Voxi-X.Y.Z.dmg`.
-5. **Post-publish gate**: download `https://voxi-site.soft-frost-24fb.workers.dev/download/Voxi.dmg` in a real browser, install, confirm Gatekeeper accepts.
+5. **Post-publish gate**: download `https://voxi.colmack.com/download/Voxi.dmg` in a real browser, install, confirm Gatekeeper accepts.
 
 ## Rollback
 

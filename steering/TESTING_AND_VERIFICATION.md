@@ -27,8 +27,8 @@
 
 ## Verification before completion
 
-1. `xcodegen generate` (if project.yml changed) → `xcodebuild … build` — zero errors, zero new warnings (strict concurrency warnings are bugs).
-2. `xcodebuild … test` — full suite, not just the new tests.
+1. `xcodegen generate` (if project.yml changed **or any source/test file was added, renamed, or deleted** — the `.xcodeproj` globs files at generate time, so a build after adding a file silently excludes it; a green test run proves nothing about a test file the project never compiled) → `xcodebuild … build` — zero errors, zero new warnings (strict concurrency warnings are bugs).
+2. `xcodebuild … test` — full suite, not just the new tests. If you added a test file, confirm its suite name appears in the output.
 3. **Self-review the diff** with hostile inputs in mind: edge cases, error paths at system boundaries, isolation annotations on new closures, duplication of existing helpers.
 4. **Prove the feature works, not just the code.** Pipeline changes: run the CLI harness. UI/capture/hotkey changes: run the app and exercise the flow (dictate, dispatch, watch the pill). If a step needs a human (permission grant, live mic), list it explicitly as a manual step — never claim it verified.
 

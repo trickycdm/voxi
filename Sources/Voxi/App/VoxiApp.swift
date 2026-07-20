@@ -59,7 +59,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // The mic test gets its own AudioCapture: AudioCapture is one-consumer
         // (single onLevel slot, exclusive engine), and sharing AppState's
         // instance let the mic test steal — then nil — the pill's level sink.
-        let view = OnboardingView(model: model, hotkeys: appState.hotkeys, capture: AudioCapture())
+        let view = OnboardingView(
+            model: model, hotkeys: appState.hotkeys, capture: AudioCapture(),
+            registry: appState.registry)
         let window = NSWindow(contentViewController: NSHostingController(rootView: view))
         window.title = "Welcome to Voxi"
         window.styleMask = [.titled, .closable]
@@ -114,14 +116,6 @@ struct MenuBarContent: View {
         Button("Run Onboarding Again") {
             (NSApp.delegate as? AppDelegate)?.showOnboarding()
         }
-
-        #if !DEBUG
-        // Release-only: the Debug build never starts the updater (shared
-        // bundle id — see UpdaterController).
-        Button("Check for Updates…") {
-            (NSApp.delegate as? AppDelegate)?.updater.checkForUpdates()
-        }
-        #endif
 
         if let error = appState.lastError {
             Divider()

@@ -3,12 +3,13 @@ import AppKit
 import SwiftUI
 
 /// First-run flow: welcome → mic permission → accessibility → globe-key fix
-/// (when needed) → mic test → hotkey summary. The window scene is wired at
-/// integration; this view only needs the shared controllers.
+/// (when needed) → mic test → model download → hotkey summary. The window
+/// scene is wired at integration; this view only needs the shared controllers.
 struct OnboardingView: View {
     let model: OnboardingModel
     let hotkeys: HotkeyController
     let capture: AudioCapture
+    let registry: ASREngineRegistry
     @Environment(\.dismiss) private var dismiss
 
     /// Deep link to System Settings → Privacy & Security → Microphone.
@@ -38,6 +39,8 @@ struct OnboardingView: View {
             GlobeKeyStep(model: model)
         case .micTest:
             MicTestStep(model: model, capture: capture)
+        case .speechModel:
+            SpeechModelStep(model: model, registry: registry)
         case .hotkeys:
             HotkeySummaryStep(hotkeys: hotkeys)
         }
@@ -365,7 +368,86 @@ private struct MicTestStep: View {
     }
 }
 
-// MARK: - Step 6: Hotkey summary
+// MARK: - Step 6: Speech model download
+
+/// Gets the recommended ASR model onto disk before the flow ends, so first
+/// dictation works without a trip to the Hub. Reuses the Hub's SpeechModel
+/// for catalog/download/progress; the download starts only on an explicit
+/// click (it's a large pull — the size is on the button).
+private struct SpeechModelStep: View {
+    let model: OnboardingModel
+    @State private var speech: SpeechModel
+
+    init(model: OnboardingModel, registry: ASREngineRegistry) {
+        self.model = model
+        _speech = State(initialValue: SpeechModel(registry: registry))
+    }
+
+    /// What this step downloads: the selected engine's recommended model
+    /// (first row as fallback — a catalog never has zero recommendations).
+    private var target: ASRModelInfo? {
+        speech.models.first(where: \.isRecommended) ?? speech.models.first
+    }
+
+    var body: some View {
+        StepLayout(symbol: "square.and.arrow.down", title: "Download the Speech Model") {
+            Text("Voxi transcribes with a speech model that runs entirely on this Mac — a one-time download.")
+                .foregroundStyle(.secondary)
+
+            if let info = target {
+                Text("\(info.displayName) · \(ModelSizeFormat.label(forMB: info.sizeMB))")
+                    .font(.callout.weight(.medium))
+
+                if model.modelReady {
+                    Label("Model ready", systemImage: "checkmark.circle.fill")
+                        .font(.callout.weight(.medium))
+                        .foregroundStyle(Color.voxiSuccess)
+                } else if let progress = speech.downloadProgress[info.id] {
+                    VStack(spacing: 6) {
+                        ProgressView(value: progress)
+                            .frame(width: 220)
+                        Text(progress, format: .percent.precision(.fractionLength(0)))
+                            .font(.caption)
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Downloading speech model")
+                } else {
+                    if let error = speech.errorMessage {
+                        Label(error, systemImage: "exclamationmark.triangle.fill")
+                            .font(.callout)
+                            .foregroundStyle(Color.voxiWarning)
+                    }
+                    Button(speech.errorMessage == nil ? "Download" : "Try Again") {
+                        Task { await download(info) }
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+            } else {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Loading model catalog…")
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .task { await prepare() }
+    }
+
+    private func prepare() async {
+        await speech.loadModels()
+        if target?.isDownloaded == true { model.modelReady = true }
+    }
+
+    private func download(_ info: ASRModelInfo) async {
+        await speech.download(info.id) // reloads the catalog when it returns
+        if target?.isDownloaded == true { model.modelReady = true }
+    }
+}
+
+// MARK: - Step 7: Hotkey summary
 
 private struct HotkeySummaryStep: View {
     let hotkeys: HotkeyController

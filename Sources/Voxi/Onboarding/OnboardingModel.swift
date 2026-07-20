@@ -24,6 +24,7 @@ final class OnboardingModel {
         case accessibility  // AXIsProcessTrusted (event tap)
         case globeKey       // only when the 🌐 key triggers a system action
         case micTest        // live level meter, prove the mic works
+        case speechModel    // download the recommended ASR model
         case hotkeys        // summary of the three default chords
     }
 
@@ -46,6 +47,10 @@ final class OnboardingModel {
     var accessibilityGranted = false
     var fnTriggersSystemAction: Bool
     var micTestPassed = false
+    /// True once the recommended speech model is on disk (pre-existing or
+    /// downloaded by the step). Dictation is impossible without it, so the
+    /// gate is strict — the window stays closable for bail-out.
+    var modelReady = false
 
     // MARK: Navigation state
 
@@ -83,6 +88,7 @@ final class OnboardingModel {
         case .accessibility: accessibilityGranted
         case .globeKey: !fnTriggersSystemAction
         case .micTest: micTestPassed
+        case .speechModel: modelReady
         }
     }
 

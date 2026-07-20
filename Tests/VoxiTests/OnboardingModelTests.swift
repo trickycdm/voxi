@@ -20,6 +20,7 @@ import Testing
         model.micPermission = .granted
         model.accessibilityGranted = true
         model.micTestPassed = true
+        model.modelReady = true
         if fnTriggersSystemAction { model.fnTriggersSystemAction = false } // resolved live
         return model
     }
@@ -28,12 +29,12 @@ import Testing
 
     @Test func globeStepHiddenWhenFnKeyIsFree() {
         let model = OnboardingModel(fnTriggersSystemAction: false, defaults: scratchDefaults())
-        #expect(model.steps == [.welcome, .microphone, .accessibility, .micTest, .hotkeys])
+        #expect(model.steps == [.welcome, .microphone, .accessibility, .micTest, .speechModel, .hotkeys])
     }
 
     @Test func globeStepShownWhenFnKeyTriggersSystemAction() {
         let model = OnboardingModel(fnTriggersSystemAction: true, defaults: scratchDefaults())
-        #expect(model.steps == [.welcome, .microphone, .accessibility, .globeKey, .micTest, .hotkeys])
+        #expect(model.steps == [.welcome, .microphone, .accessibility, .globeKey, .micTest, .speechModel, .hotkeys])
     }
 
     // MARK: Passability matrix
@@ -47,6 +48,7 @@ import Testing
         #expect(!model.isPassable(.accessibility))
         #expect(!model.isPassable(.globeKey))
         #expect(!model.isPassable(.micTest))
+        #expect(!model.isPassable(.speechModel))
     }
 
     @Test func microphoneGateFollowsPermissionState() {
@@ -83,6 +85,13 @@ import Testing
         #expect(!model.isPassable(.micTest))
         model.micTestPassed = true
         #expect(model.isPassable(.micTest))
+    }
+
+    @Test func speechModelGateFollowsModelReady() {
+        let model = OnboardingModel(fnTriggersSystemAction: false, defaults: scratchDefaults())
+        #expect(!model.isPassable(.speechModel))
+        model.modelReady = true // pre-existing download or step completed
+        #expect(model.isPassable(.speechModel))
     }
 
     // MARK: Navigation rules
@@ -148,6 +157,8 @@ import Testing
         model.fnTriggersSystemAction = false
         model.advance() // -> micTest
         model.micTestPassed = true
+        model.advance() // -> speechModel
+        model.modelReady = true
         model.advance() // -> hotkeys
         #expect(model.isLastStep)
 

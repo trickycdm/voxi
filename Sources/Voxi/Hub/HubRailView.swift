@@ -62,8 +62,47 @@ struct HubRailView: View {
                 .font(.caption2.monospaced())
                 .foregroundStyle(Color.voxiInk3)
                 .accessibilityLabel("Voxi version \(Self.semver)")
+            updateControl
         }
         .padding(.horizontal, Theme.Space.md)
+    }
+
+    /// Check-for-updates lives here (not the tray): the rail is a surface we
+    /// control, so "you're up to date" is inline text instead of a Sparkle
+    /// alert that may never front over an LSUIElement agent.
+    @ViewBuilder private var updateControl: some View {
+        if let updater = (NSApp.delegate as? AppDelegate)?.updater {
+            VStack(alignment: .leading, spacing: 2) {
+                Button {
+                    updater.checkForUpdates()
+                } label: {
+                    Label("Check for Updates", systemImage: "arrow.triangle.2.circlepath")
+                        .font(.caption)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Color.voxiInk2)
+                .disabled(!updater.isAvailable || updater.status == .checking)
+                .opacity(updater.isAvailable ? 1 : 0.5)
+                .help(updater.isAvailable
+                    ? "Check for a newer Voxi release"
+                    : "Update checks run in release builds only")
+
+                if let line = UpdaterController.statusLine(for: updater.status) {
+                    Text(line)
+                        .font(.caption2)
+                        .foregroundStyle(statusColor(for: updater.status))
+                }
+            }
+            .padding(.top, Theme.Space.xs)
+        }
+    }
+
+    private func statusColor(for status: UpdaterController.Status) -> Color {
+        switch status {
+        case .updateAvailable: .voxiSuccess
+        case .failed: .voxiWarning
+        default: .voxiInk3
+        }
     }
 
     /// Semver from the bundle (CFBundleShortVersionString), stamped by

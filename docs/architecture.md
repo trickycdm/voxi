@@ -28,7 +28,7 @@ One voice session runs end-to-end through `DictationCoordinator`: a hotkey chord
 | Dispatchers | Card executors; claude binary discovery; stream-json parsing | `Dispatcher` protocol + `DispatcherRegistry` |
 | Persistence | GRDB (`history` + FTS5, `dictionaryEntry`, `actionCard`) | Append-only migrations; Sendable records |
 | Hub | Settings/history/dictionary window | — |
-| Onboarding | First-run permission walkthrough (plain `NSWindow`, pre-scene) | Pure `OnboardingModel` step/gate logic |
+| Onboarding | First-run permission walkthrough + speech-model download (plain `NSWindow`, pre-scene) | Pure `OnboardingModel` step/gate logic; reuses Hub's `SpeechModel` observable |
 
 Extension points: a new speech engine, refiner backend, or card executor is one file + one registry line (see `steering/CODING_CONVENTIONS.md`).
 
@@ -60,6 +60,8 @@ Extension points: a new speech engine, refiner backend, or card executor is one 
 | 2026-07-19 | Dispatch stall watchdog is inactivity-based (300 s silence), not a wall-clock cap | Long claude runs are legitimate; a healthy run streams events continuously. Terminates via the existing cancel path so completion semantics stay single-pathed |
 | 2026-07-19 | Command mode gets its own `VoxiCommand` signal-red token (was: alias of Success mint) | The mint tint proved invisible in practice ("queue is broken" report was a missed chord); status colors stay reserved for status per the design system |
 | 2026-07-18 | Secure-input refusal is holder-aware, not flag-global | `IsSecureEventInputEnabled()` is machine-global; MDM agents hold it session-long, which killed all insertion on a managed Mac. `SecureInput` reads the holder PID from IORegistry `IOConsoleUsers` (must use `IORegistryGetRootEntry`; the `IOService:/` path form lacks the property) and refuses only when the holder is the target app or unidentifiable. `AXSecureTextField` subrole still always refuses |
+| 2026-07-20 | "Check for Updates" moved from tray menu to Hub rail footer | Voxi is an LSUIElement (accessory) app and Sparkle's update-status alerts could fail to front over it, making the check appear non-functional. The Hub rail is a user-controlled surface where we show inline status and drive Sparkle's install flow. Debug builds still disable the updater (unchanged invariant); control shows disabled with explanatory tooltip |
+| 2026-07-20 | Onboarding gained a speech-model download step | First-run previously required opening the Hub and manually downloading Parakeet before dictation worked. `Step.speechModel` (inserted between micTest and hotkeys) gates on `modelReady`, reuses the Hub's `SpeechModel` observable for catalog/download/progress, and is a strict gate (no skip, window closable). Explicit user click to start; ~600 MB download is not auto-started |
 
 ## Open Items
 

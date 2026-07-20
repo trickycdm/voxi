@@ -48,17 +48,29 @@ struct HubRailView: View {
     }
 
     private var footer: some View {
-        HStack(spacing: Theme.Space.sm) {
-            Circle()
-                .fill(status.isReady ? Color.voxiSuccess : Color.voxiInk3)
-                .frame(width: 6, height: 6)
-            Text(status.text)
-                .font(.caption)
-                .foregroundStyle(Color.voxiInk2)
+        VStack(alignment: .leading, spacing: Theme.Space.xs) {
+            HStack(spacing: Theme.Space.sm) {
+                Circle()
+                    .fill(status.isReady ? Color.voxiSuccess : Color.voxiInk3)
+                    .frame(width: 6, height: 6)
+                Text(status.text)
+                    .font(.caption)
+                    .foregroundStyle(Color.voxiInk2)
+            }
+            .help("Speech engine status")
+            Text(Self.versionLine)
+                .font(.caption2.monospaced())
+                .foregroundStyle(Color.voxiInk3)
+                .accessibilityLabel("Voxi version \(Self.semver)")
         }
         .padding(.horizontal, Theme.Space.md)
-        .help("Speech engine status")
     }
+
+    /// Semver from the bundle (CFBundleShortVersionString), stamped by
+    /// project.yml at build time. Missing only in malformed bundles.
+    private static let semver =
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.0"
+    private static let versionLine = "v\(semver)"
 
     /// The registry is @MainActor but not @Observable, so the footer polls
     /// three cheap synchronous reads while the Hub is open; cancels with the

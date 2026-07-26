@@ -12,6 +12,14 @@
         <language>en</language>
         <!-- release.sh inserts items below -->
         <item>
+            <title>Voxi 0.4.1</title>
+            <pubDate>Sun, 26 Jul 2026 20:07:53 +0100</pubDate>
+            <sparkle:version>5</sparkle:version>
+            <sparkle:shortVersionString>0.4.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/trickycdm/voxi/releases/download/v0.4.1/Voxi-0.4.1.dmg" sparkle:edSignature="wSZ/zub2HstkLAm0hf+EkE6TMXP/PilfGL+zLRAlUw5tsz05deDTAqT9kfYgi+KsrkR1IuNa/LNPdZzOcpKHBg==" length="21196514" type="application/octet-stream"/>
+        </item>
+        <item>
             <title>Voxi 0.4.0</title>
             <pubDate>Sun, 26 Jul 2026 19:25:19 +0100</pubDate>
             <sparkle:version>4</sparkle:version>

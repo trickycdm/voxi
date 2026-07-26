@@ -48,8 +48,11 @@ log "xcodegen generate"
 log "archive (Release, Developer ID, hardened runtime)"
 rm -rf "$DIST"
 mkdir -p "$DIST"
+# -skipMacroValidation: LLM.swift ships Swift macros, which CLI xcodebuild
+# refuses as untrusted (same constraint as the Debug/test builds, CLAUDE.md).
 xcodebuild -project "$ROOT/Voxi.xcodeproj" -scheme Voxi -configuration Release \
-  -destination 'generic/platform=macOS' -archivePath "$DIST/Voxi.xcarchive" archive -quiet
+  -destination 'generic/platform=macOS' -archivePath "$DIST/Voxi.xcarchive" \
+  -skipMacroValidation archive -quiet
 
 log "export archive"
 xcodebuild -exportArchive -archivePath "$DIST/Voxi.xcarchive" \

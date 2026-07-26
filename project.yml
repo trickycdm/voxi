@@ -20,6 +20,13 @@ packages:
   GRDB:
     url: https://github.com/groue/GRDB.swift
     from: 7.11.1
+  # llama.cpp GGUF inference for the on-device refiner. The obra fork adds
+  # prepareContext (KV prefill), ThinkingMode, and useResolvedTemplate over
+  # upstream eastriverlee/LLM.swift. Pinned to the exact revision ghost-pepper
+  # (where the integration pattern comes from) ships against.
+  LLM.swift:
+    url: https://github.com/obra/LLM.swift.git
+    revision: c2144e1a0e29c280ec6080b7da85e876d51f8509
   Sparkle:
     url: https://github.com/sparkle-project/Sparkle
     from: 2.7.0
@@ -39,6 +46,8 @@ targets:
         product: FluidAudio
       - package: GRDB
         product: GRDB
+      - package: LLM.swift
+        product: LLM
       - package: Sparkle
         product: Sparkle
     info:

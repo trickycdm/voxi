@@ -100,6 +100,20 @@ final class AppState {
                 voxiLog.notice("ASR prewarm skipped: \(error.localizedDescription)")
             }
         }
+
+        // Same for the on-device refiner model (1-3 s load otherwise paid on
+        // the first dictation).
+        let refinerConfig = RefinerConfig.load()
+        if refinerConfig.backend == .localLLM {
+            Task {
+                do {
+                    try await LocalLLMEngine.shared.ensureLoaded(modelID: refinerConfig.localModelID)
+                    voxiLog.info("on-device refiner prewarmed")
+                } catch {
+                    voxiLog.notice("on-device refiner prewarm skipped: \(error.localizedDescription)")
+                }
+            }
+        }
     }
 
     func shutdown() {

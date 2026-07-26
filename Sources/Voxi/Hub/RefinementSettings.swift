@@ -56,8 +56,63 @@ final class RefinementModel {
     }
 }
 
+/// Download/delete state for the on-device GGUF models, presented through the
+/// same `ModelRowView` rows as the speech models (descriptors mapped to
+/// `ASRModelInfo`). Selection lives in `RefinerConfig.localModelID`, so it
+/// participates in RefinementModel's dirty-tracking and Save.
+@MainActor
+@Observable
+final class LocalLLMModel {
+    private(set) var rows: [ASRModelInfo] = []
+    /// modelID → 0...1 while a download is in flight.
+    private(set) var downloadProgress: [String: Double] = [:]
+    var errorMessage: String?
+
+    private let downloader = LocalLLMDownloader()
+    private let modelsDir = VoxiPaths.modelsDir(engineID: LocalLLMCatalog.engineID)
+
+    func refresh() {
+        rows = LocalLLMCatalog.curated.map { descriptor in
+            ASRModelInfo(
+                id: descriptor.id,
+                displayName: descriptor.displayName,
+                sizeMB: descriptor.sizeMB,
+                isDownloaded: LocalLLMCatalog.isDownloaded(descriptor, under: modelsDir),
+                isRecommended: descriptor.isRecommended
+            )
+        }
+    }
+
+    func download(_ modelID: String) async {
+        guard let descriptor = LocalLLMCatalog.descriptor(for: modelID),
+              downloadProgress[modelID] == nil else { return }
+        downloadProgress[modelID] = 0
+        do {
+            try await downloader.download(descriptor, to: modelsDir) { [weak self] progress in
+                Task { @MainActor [weak self] in
+                    guard let self, self.downloadProgress[modelID] != nil else { return }
+                    self.downloadProgress[modelID] = progress
+                }
+            }
+            errorMessage = nil
+        } catch {
+            errorMessage = "Download failed: \(error.localizedDescription)"
+        }
+        downloadProgress[modelID] = nil
+        refresh()
+    }
+
+    func delete(_ modelID: String) async {
+        guard let descriptor = LocalLLMCatalog.descriptor(for: modelID) else { return }
+        await LocalLLMEngine.shared.unload()
+        await downloader.delete(descriptor, from: modelsDir)
+        refresh()
+    }
+}
+
 struct RefinementSettingsSection: View {
     @State private var model = RefinementModel()
+    @State private var localModels = LocalLLMModel()
 
     var body: some View {
         Section {
@@ -70,6 +125,22 @@ struct RefinementSettingsSection: View {
             switch model.config.backend {
             case .rules:
                 EmptyView()
+            case .localLLM:
+                ForEach(localModels.rows) { info in
+                    ModelRowView(
+                        info: info,
+                        isSelected: model.config.localModelID == info.id,
+                        progress: localModels.downloadProgress[info.id],
+                        onDownload: { Task { await localModels.download(info.id) } },
+                        onDelete: { Task { await localModels.delete(info.id) } },
+                        onSelect: { model.config.localModelID = info.id }
+                    )
+                }
+                if let error = localModels.errorMessage {
+                    Label(error, systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(Color.voxiDanger)
+                }
             case .openAICompat:
                 TextField(
                     "Base URL",
@@ -109,7 +180,10 @@ struct RefinementSettingsSection: View {
         } header: {
             Text("Refinement").voxiPlaque()
         } footer: {
-            Text("Rule-based cleanup always runs as a fallback when the LLM is unreachable, and everything works offline without an LLM. The local (OpenAI-compatible) backend covers Ollama, LM Studio, and llama.cpp servers.")
+            Text("Rule-based cleanup always runs as a fallback when the LLM is unreachable, and everything works offline without an LLM. The on-device backend runs a small model locally — nothing leaves your Mac and no key is needed. The server (OpenAI-compatible) backend covers Ollama, LM Studio, and llama.cpp servers.")
+        }
+        .task(id: model.config.backend) {
+            if model.config.backend == .localLLM { localModels.refresh() }
         }
     }
 

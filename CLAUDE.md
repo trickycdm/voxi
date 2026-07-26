@@ -51,13 +51,14 @@ Requires Xcode 26+, XcodeGen (`brew install xcodegen`), macOS 14+.
 
 ```sh
 xcodegen generate                                                       # after any project.yml change
-xcodebuild -project Voxi.xcodeproj -scheme Voxi -configuration Debug -derivedDataPath build build
-xcodebuild -project Voxi.xcodeproj -scheme Voxi -configuration Debug -derivedDataPath build test
+xcodebuild -project Voxi.xcodeproj -scheme Voxi -configuration Debug -derivedDataPath build -skipMacroValidation build
+xcodebuild -project Voxi.xcodeproj -scheme Voxi -configuration Debug -derivedDataPath build -skipMacroValidation test
 ./Scripts/make-test-audio.sh                                            # spoken WAV fixtures (needed before ASR tests)
 build/Build/Products/Debug/Voxi.app/Contents/MacOS/Voxi --dictate <wav> # headless pipeline harness, no mic/permissions
 ./Scripts/release.sh X.Y.Z                                              # signed+notarised DMG in dist/ (docs/RELEASING.md)
 ```
 
+- `-skipMacroValidation` is required on CLI builds: LLM.swift (on-device refiner) ships Swift macros, which xcodebuild refuses untrusted. In the Xcode GUI, approve the macro once when prompted.
 - The CLI harness (`--transcribe` / `--dictate` / `--command`, `--engine parakeet|whisperkit`) is the pipeline's automated integration surface.
 - Real-claude integration test (costs cents, env-gated): prefix the var with `TEST_RUNNER_` — xcodebuild strips the prefix inside the test process: `TEST_RUNNER_VOXI_CLAUDE_INTEGRATION=1 xcodebuild … test -only-testing:VoxiTests/DispatchersIntegrationTests`.
 - Mic, TCC, event-tap, and window behavior **cannot be tested headlessly** — those changes carry explicit manual verification steps (`steering/TESTING_AND_VERIFICATION.md`).

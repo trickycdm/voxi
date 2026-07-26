@@ -3,13 +3,15 @@ import Foundation
 /// Which refiner backend the user selected in Settings.
 enum RefinerBackendID: String, Codable, CaseIterable, Sendable {
     case rules
+    case localLLM = "local-llm"
     case openAICompat = "openai-compat"
     case anthropic
 
     var displayName: String {
         switch self {
         case .rules: "Rule-based (offline)"
-        case .openAICompat: "Local LLM (OpenAI-compatible)"
+        case .localLLM: "On-device LLM (no setup)"
+        case .openAICompat: "Server (OpenAI-compatible)"
         case .anthropic: "Anthropic API"
         }
     }
@@ -23,6 +25,9 @@ enum RefinerBackendID: String, Codable, CaseIterable, Sendable {
 struct RefinerConfig: Codable, Equatable, Sendable {
     var backend: RefinerBackendID = .rules
 
+    /// Selected GGUF model for the on-device backend.
+    var localModelID: String = LocalLLMCatalog.recommended.id
+
     var openAIBaseURL: String = "http://localhost:11434"
     var openAIModel: String = ""
     var openAIAPIKey: String = ""
@@ -31,6 +36,22 @@ struct RefinerConfig: Codable, Equatable, Sendable {
     var anthropicModel: String = AnthropicRefiner.defaultModel
 
     static let defaultsKey = "voxi.refinerConfig"
+
+    init() {}
+
+    /// Lenient decoding: every field falls back to its default when absent,
+    /// so config persisted by an older build survives new fields being added.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let defaults = RefinerConfig()
+        backend = try container.decodeIfPresent(RefinerBackendID.self, forKey: .backend) ?? defaults.backend
+        localModelID = try container.decodeIfPresent(String.self, forKey: .localModelID) ?? defaults.localModelID
+        openAIBaseURL = try container.decodeIfPresent(String.self, forKey: .openAIBaseURL) ?? defaults.openAIBaseURL
+        openAIModel = try container.decodeIfPresent(String.self, forKey: .openAIModel) ?? defaults.openAIModel
+        openAIAPIKey = try container.decodeIfPresent(String.self, forKey: .openAIAPIKey) ?? defaults.openAIAPIKey
+        anthropicAPIKey = try container.decodeIfPresent(String.self, forKey: .anthropicAPIKey) ?? defaults.anthropicAPIKey
+        anthropicModel = try container.decodeIfPresent(String.self, forKey: .anthropicModel) ?? defaults.anthropicModel
+    }
 
     static func load(from defaults: UserDefaults = .standard) -> RefinerConfig {
         guard let data = defaults.data(forKey: defaultsKey),
@@ -51,6 +72,15 @@ struct RefinerConfig: Codable, Equatable, Sendable {
         switch backend {
         case .rules:
             return nil
+        case .localLLM:
+            guard let descriptor = LocalLLMCatalog.descriptor(for: localModelID),
+                  LocalLLMCatalog.isDownloaded(
+                    descriptor,
+                    under: VoxiPaths.modelsDir(engineID: LocalLLMCatalog.engineID))
+            else {
+                return nil  // model missing → rules-only, dictation never breaks
+            }
+            return LocalRefiner(modelID: localModelID)
         case .openAICompat:
             let urlString = openAIBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
             let model = openAIModel.trimmingCharacters(in: .whitespacesAndNewlines)

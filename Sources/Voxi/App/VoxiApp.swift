@@ -21,6 +21,7 @@ struct VoxiApp: App {
         Window("Voxi Hub", id: "hub") {
             HubView()
                 .environment(appDelegate.appState)
+                .environment(appDelegate.updater)
         }
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)

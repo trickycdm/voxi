@@ -19,6 +19,7 @@
 | Dispatcher / stream parsing | Unit tests over the pure parts (args builder, parser) + gated integration test when behavior with the real binary changes |
 | Bug fix | **Regression rule, no exceptions:** a test that fails without the fix and passes with it |
 | Mic / TCC / window / tap behavior | Pure-extracted decisions unit-tested; the shell gets a listed manual verification step |
+| Menu-bar items / scene↔controller wiring | Manual click-through only — wiring bugs (e.g. a silently failing `NSApp.delegate` cast) compile clean and pass every unit test; both 0.4.1 fixes were this class, shipped because the GUI checklist was skipped |
 
 ### Test discipline
 

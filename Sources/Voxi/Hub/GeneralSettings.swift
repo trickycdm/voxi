@@ -109,12 +109,14 @@ struct GeneralSettingsSection: View {
                 }
             }
             Toggle("Restore clipboard after paste", isOn: $insertion.settings.restoreClipboard)
-            Toggle("Learn corrections from my edits", isOn: $insertion.settings.learnCorrections)
-                .help("""
-                For 15 seconds after inserting, Voxi watches the field it typed \
-                into; if you fix a word or two, the correction is added to your \
-                personal dictionary. Everything stays on this Mac.
-                """)
+            Toggle(isOn: $insertion.settings.learnCorrections) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Learn corrections from my edits")
+                    Text("If you fix a word right after dictating, Voxi adds the correction to your dictionary — on this Mac only.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
         } header: {
             Text("General").voxiPlaque()
         }

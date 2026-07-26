@@ -125,6 +125,59 @@ private actor HubMockEngine: ASREngine {
         #expect(RefinementModel(defaults: defaults).config == model.config)
     }
 
+    @Test func refinementBackendAndModelSelectionAutoSave() throws {
+        let (defaults, suite) = try makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let model = RefinementModel(defaults: defaults)
+        model.config.backend = .localLLM
+        model.config.localModelID = "qwen3.5-0.8b"
+        // Picker choices persist without Save…
+        #expect(!model.isDirty)
+        let reloaded = RefinerConfig.load(from: defaults)
+        #expect(reloaded.backend == .localLLM)
+        #expect(reloaded.localModelID == "qwen3.5-0.8b")
+
+        // …while credential edits still need Save, and a backend flip must
+        // not silently commit a half-typed key.
+        model.config.backend = .anthropic
+        model.config.anthropicAPIKey = "sk-ant-test"
+        #expect(model.isDirty)
+        #expect(RefinerConfig.load(from: defaults).anthropicAPIKey.isEmpty)
+        model.save()
+        #expect(!model.isDirty)
+        #expect(RefinerConfig.load(from: defaults).anthropicAPIKey == "sk-ant-test")
+    }
+
+    @Test func refinementSaveButtonOnlyForCredentialBackends() throws {
+        let (defaults, suite) = try makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let model = RefinementModel(defaults: defaults)
+        #expect(!model.showsSaveButton) // rules
+        model.config.backend = .localLLM
+        #expect(!model.showsSaveButton)
+        model.config.backend = .openAICompat
+        #expect(model.showsSaveButton)
+        model.config.backend = .anthropic
+        #expect(model.showsSaveButton)
+    }
+
+    @Test func refinementTestConnectionExplainsMissingLocalModel() async throws {
+        let (defaults, suite) = try makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let model = RefinementModel(defaults: defaults)
+        model.config.backend = .localLLM
+        model.config.localModelID = "no-such-model"
+        await model.testConnection()
+        guard case .failed(let message) = model.testState else {
+            Issue.record("expected .failed for missing model, got \(model.testState)")
+            return
+        }
+        #expect(message.contains("not downloaded"))
+    }
+
     @Test func refinementTestConnectionRulesAlwaysOK() async throws {
         let (defaults, suite) = try makeDefaults()
         defer { defaults.removePersistentDomain(forName: suite) }

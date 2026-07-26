@@ -1,7 +1,9 @@
 import SwiftUI
 
 /// Editing state for the Refinement settings section. `config` is a working
-/// copy; Save persists it. Round-trip and dirty-tracking are unit-tested.
+/// copy: backend + model selection persist the moment they change, credential
+/// fields wait for the explicit Save. Round-trip, auto-save split, and
+/// dirty-tracking are unit-tested.
 @MainActor
 @Observable
 final class RefinementModel {
@@ -15,6 +17,7 @@ final class RefinementModel {
     var config: RefinerConfig {
         didSet {
             if config != oldValue { testState = .idle }
+            autoSavePickerChanges(oldValue: oldValue)
         }
     }
     private(set) var savedConfig: RefinerConfig
@@ -31,9 +34,28 @@ final class RefinementModel {
 
     var isDirty: Bool { config != savedConfig }
 
+    /// Only the credential backends need the explicit Save button — backend
+    /// and model selection persist on change.
+    var showsSaveButton: Bool {
+        config.backend == .openAICompat || config.backend == .anthropic
+    }
+
     func save() {
         config.save(to: defaults)
         savedConfig = config
+    }
+
+    /// Backend + on-device model choice aren't credentials: persist them the
+    /// moment they change (a selected model row that silently needed Save was
+    /// a trap). Credential fields stay behind isDirty/Save.
+    private func autoSavePickerChanges(oldValue: RefinerConfig) {
+        guard config.backend != oldValue.backend
+                || config.localModelID != oldValue.localModelID else { return }
+        var persisted = savedConfig
+        persisted.backend = config.backend
+        persisted.localModelID = config.localModelID
+        persisted.save(to: defaults)
+        savedConfig = persisted
     }
 
     /// Tests the *currently edited* configuration (no save required).
@@ -44,7 +66,9 @@ final class RefinementModel {
             return
         }
         guard let refiner = config.makeLLMRefiner() else {
-            testState = .failed("Configuration incomplete — fill in the required fields.")
+            testState = .failed(config.backend == .localLLM
+                ? "On-device model not downloaded — download it below."
+                : "Configuration incomplete — fill in the required fields.")
             return
         }
         do {
@@ -58,8 +82,8 @@ final class RefinementModel {
 
 /// Download/delete state for the on-device GGUF models, presented through the
 /// same `ModelRowView` rows as the speech models (descriptors mapped to
-/// `ASRModelInfo`). Selection lives in `RefinerConfig.localModelID`, so it
-/// participates in RefinementModel's dirty-tracking and Save.
+/// `ASRModelInfo`). Selection lives in `RefinerConfig.localModelID` and
+/// persists on change via RefinementModel's auto-save.
 @MainActor
 @Observable
 final class LocalLLMModel {
@@ -115,6 +139,12 @@ struct RefinementSettingsSection: View {
     @State private var localModels = LocalLLMModel()
 
     var body: some View {
+        refinementSection
+        onDeviceModelSection
+    }
+
+    /// Bay 1: backend choice, per-backend credential fields, Test Connection.
+    private var refinementSection: some View {
         Section {
             Picker("Backend", selection: $model.config.backend) {
                 ForEach(RefinerBackendID.allCases, id: \.self) { backend in
@@ -123,24 +153,8 @@ struct RefinementSettingsSection: View {
             }
 
             switch model.config.backend {
-            case .rules:
+            case .rules, .localLLM:
                 EmptyView()
-            case .localLLM:
-                ForEach(localModels.rows) { info in
-                    ModelRowView(
-                        info: info,
-                        isSelected: model.config.localModelID == info.id,
-                        progress: localModels.downloadProgress[info.id],
-                        onDownload: { Task { await localModels.download(info.id) } },
-                        onDelete: { Task { await localModels.delete(info.id) } },
-                        onSelect: { model.config.localModelID = info.id }
-                    )
-                }
-                if let error = localModels.errorMessage {
-                    Label(error, systemImage: "exclamationmark.triangle")
-                        .font(.caption)
-                        .foregroundStyle(Color.voxiDanger)
-                }
             case .openAICompat:
                 TextField(
                     "Base URL",
@@ -169,8 +183,10 @@ struct RefinementSettingsSection: View {
             }
 
             HStack {
-                Button("Save") { model.save() }
-                    .disabled(!model.isDirty)
+                if model.showsSaveButton {
+                    Button("Save") { model.save() }
+                        .disabled(!model.isDirty)
+                }
                 Button("Test Connection") {
                     Task { await model.testConnection() }
                 }
@@ -180,10 +196,66 @@ struct RefinementSettingsSection: View {
         } header: {
             Text("Refinement").voxiPlaque()
         } footer: {
-            Text("Rule-based cleanup always runs as a fallback when the LLM is unreachable, and everything works offline without an LLM. The on-device backend runs a small model locally — nothing leaves your Mac and no key is needed. The server (OpenAI-compatible) backend covers Ollama, LM Studio, and llama.cpp servers.")
+            VStack(alignment: .leading, spacing: 4) {
+                if let footnote = backendFootnote {
+                    Text(footnote)
+                }
+                Text("Rule-based cleanup always runs as a fallback, and everything works offline without an LLM.")
+            }
         }
-        .task(id: model.config.backend) {
-            if model.config.backend == .localLLM { localModels.refresh() }
+    }
+
+    /// Bay 2: the on-device model garage. Always present — model files exist
+    /// independent of the selected backend, and this keeps the section
+    /// anatomy identical to Speech.
+    private var onDeviceModelSection: some View {
+        Section {
+            ForEach(localModels.rows) { info in
+                ModelRowView(
+                    info: info,
+                    isSelected: model.config.localModelID == info.id,
+                    progress: localModels.downloadProgress[info.id],
+                    onDownload: { Task { await localModels.download(info.id) } },
+                    onDelete: { Task { await localModels.delete(info.id) } },
+                    onSelect: { model.config.localModelID = info.id }
+                )
+            }
+            if model.config.backend == .localLLM,
+               !localModels.rows.isEmpty,
+               !localModels.rows.contains(where: {
+                   $0.id == model.config.localModelID && $0.isDownloaded
+               }) {
+                Label(
+                    "Model not downloaded — refinement falls back to rules.",
+                    systemImage: "exclamationmark.triangle"
+                )
+                .font(.caption)
+                .foregroundStyle(Color.voxiWarning)
+            }
+            if let error = localModels.errorMessage {
+                Label(error, systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(Color.voxiDanger)
+            }
+        } header: {
+            Text("On-Device Model").voxiPlaque()
+        } footer: {
+            Text("Models are stored locally and can be deleted anytime.")
+        }
+        .task { localModels.refresh() }
+    }
+
+    /// One extra footer line about the *selected* backend, not all of them.
+    private var backendFootnote: String? {
+        switch model.config.backend {
+        case .rules:
+            nil
+        case .localLLM:
+            "A small model refines text right on this Mac — nothing leaves it, no key needed."
+        case .openAICompat:
+            "Covers Ollama, LM Studio, and llama.cpp servers."
+        case .anthropic:
+            "Your key is stored on this Mac and used only for refinement calls."
         }
     }
 

@@ -9,6 +9,16 @@ enum MicPermissionState: Equatable, Sendable {
     case denied
 }
 
+/// Where the optional on-device refiner setup stands. The refiner step is
+/// skippable (Next is the "not now" path), so its gate closes only while a
+/// download is actually in flight; a failure returns to `.idle` so the user
+/// is never stuck.
+enum RefinerSetupState: Equatable, Sendable {
+    case idle
+    case downloading
+    case ready
+}
+
 /// Pure step/gate logic for the first-run flow. The views feed live inputs
 /// (permission states, globe-key flag, mic-test result) into the mutable
 /// properties; everything else — which steps exist, which are passable,
@@ -25,6 +35,8 @@ final class OnboardingModel {
         case globeKey       // only when the 🌐 key triggers a system action
         case micTest        // live level meter, prove the mic works
         case speechModel    // download the recommended ASR model
+        case refiner        // optional on-device LLM polish (opt-in download)
+        case corrections    // correction learning consent (default-on toggle)
         case hotkeys        // summary of the three default chords
     }
 
@@ -51,6 +63,7 @@ final class OnboardingModel {
     /// downloaded by the step). Dictation is impossible without it, so the
     /// gate is strict — the window stays closable for bail-out.
     var modelReady = false
+    var refinerSetup: RefinerSetupState = .idle
 
     // MARK: Navigation state
 
@@ -83,12 +96,13 @@ final class OnboardingModel {
     /// globe key still bound to a system action).
     func isPassable(_ step: Step) -> Bool {
         switch step {
-        case .welcome, .hotkeys: true
+        case .welcome, .hotkeys, .corrections: true
         case .microphone: micPermission == .granted
         case .accessibility: accessibilityGranted
         case .globeKey: !fnTriggersSystemAction
         case .micTest: micTestPassed
         case .speechModel: modelReady
+        case .refiner: refinerSetup != .downloading
         }
     }
 

@@ -10,6 +10,10 @@ struct OnboardingView: View {
     let hotkeys: HotkeyController
     let capture: AudioCapture
     let registry: ASREngineRegistry
+    /// Live inserter for the corrections step: its toggle must reach the
+    /// running TextInserter, not just defaults, or the choice only takes
+    /// effect after relaunch. Optional so previews/tests can omit it.
+    let inserter: TextInserter?
     @Environment(\.dismiss) private var dismiss
 
     /// Deep link to System Settings → Privacy & Security → Microphone.
@@ -41,6 +45,10 @@ struct OnboardingView: View {
             MicTestStep(model: model, capture: capture)
         case .speechModel:
             SpeechModelStep(model: model, registry: registry)
+        case .refiner:
+            RefinerStep(model: model)
+        case .corrections:
+            CorrectionLearningStep(inserter: inserter)
         case .hotkeys:
             HotkeySummaryStep(hotkeys: hotkeys)
         }
@@ -403,16 +411,9 @@ private struct SpeechModelStep: View {
                         .font(.callout.weight(.medium))
                         .foregroundStyle(Color.voxiSuccess)
                 } else if let progress = speech.downloadProgress[info.id] {
-                    VStack(spacing: 6) {
-                        ProgressView(value: progress)
-                            .frame(width: 220)
-                        Text(progress, format: .percent.precision(.fractionLength(0)))
-                            .font(.caption)
-                            .monospacedDigit()
-                            .foregroundStyle(.secondary)
-                    }
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel("Downloading speech model")
+                    DownloadProgressView(
+                        progress: progress,
+                        accessibilityLabel: "Downloading speech model")
                 } else {
                     if let error = speech.errorMessage {
                         Label(error, systemImage: "exclamationmark.triangle.fill")
@@ -447,7 +448,151 @@ private struct SpeechModelStep: View {
     }
 }
 
-// MARK: - Step 7: Hotkey summary
+/// Progress bar + percent shared by the two model-download steps.
+private struct DownloadProgressView: View {
+    let progress: Double
+    let accessibilityLabel: String
+
+    var body: some View {
+        VStack(spacing: 6) {
+            ProgressView(value: progress)
+                .frame(width: 220)
+            Text(progress, format: .percent.precision(.fractionLength(0)))
+                .font(.caption)
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilityLabel)
+    }
+}
+
+// MARK: - Step 7: On-device refiner (optional)
+
+/// Opt-in setup for the on-device LLM refiner. Skippable — the footer's Next
+/// is the "not now" path, and the gate closes only while a download is in
+/// flight. Enabling saves the config immediately (the choice survives closing
+/// the window) and prewarms the engine so the first dictation is fast.
+private struct RefinerStep: View {
+    let model: OnboardingModel
+    @State private var localLLM = LocalLLMModel()
+
+    /// The catalog's recommended model (first row as fallback — a catalog
+    /// never has zero recommendations).
+    private var target: ASRModelInfo? {
+        localLLM.rows.first(where: \.isRecommended) ?? localLLM.rows.first
+    }
+
+    var body: some View {
+        StepLayout(symbol: "wand.and.stars", title: "Polish With On-Device AI") {
+            Text("Optional: a small AI model tidies your dictation — grammar, fillers, phrasing. It runs entirely on this Mac. Nothing leaves it, and there's no account or key.")
+                .foregroundStyle(.secondary)
+
+            switch model.refinerSetup {
+            case .ready:
+                Label("On-device refinement enabled", systemImage: "checkmark.circle.fill")
+                    .font(.callout.weight(.medium))
+                    .foregroundStyle(Color.voxiSuccess)
+            case .downloading:
+                if let info = target {
+                    DownloadProgressView(
+                        progress: localLLM.downloadProgress[info.id] ?? 0,
+                        accessibilityLabel: "Downloading refiner model")
+                }
+            case .idle:
+                if let info = target {
+                    Text("\(info.displayName) · \(ModelSizeFormat.label(forMB: info.sizeMB))")
+                        .font(.callout.weight(.medium))
+
+                    if let error = localLLM.errorMessage {
+                        Label(error, systemImage: "exclamationmark.triangle.fill")
+                            .font(.callout)
+                            .foregroundStyle(Color.voxiWarning)
+                    }
+                    Button(enableButtonTitle(for: info)) {
+                        Task { await enable(info) }
+                    }
+                    .buttonStyle(.borderedProminent)
+
+                    Text("You can skip this — rule-based cleanup works either way, and it's one click in Settings later.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .task { prepare() }
+    }
+
+    private func enableButtonTitle(for info: ASRModelInfo) -> String {
+        if localLLM.errorMessage != nil { return "Try Again" }
+        if info.isDownloaded { return "Enable" }
+        return "Enable · Download \(ModelSizeFormat.label(forMB: info.sizeMB))"
+    }
+
+    private func prepare() {
+        localLLM.refresh()
+        let config = RefinerConfig.load()
+        if config.backend == .localLLM,
+           localLLM.rows.contains(where: { $0.id == config.localModelID && $0.isDownloaded }) {
+            model.refinerSetup = .ready // re-run of onboarding, already set up
+        }
+    }
+
+    private func enable(_ info: ASRModelInfo) async {
+        model.refinerSetup = .downloading
+        if !info.isDownloaded {
+            await localLLM.download(info.id) // refreshes rows when it returns
+        }
+        guard let refreshed = target, refreshed.isDownloaded else {
+            model.refinerSetup = .idle // failed; errorMessage row explains
+            return
+        }
+        var config = RefinerConfig.load()
+        config.backend = .localLLM
+        config.localModelID = refreshed.id
+        config.save()
+        // The launch prewarm already ran and skipped (backend wasn't local);
+        // warm now so the first dictation doesn't pay the model load.
+        Task { try? await LocalLLMEngine.shared.ensureLoaded(modelID: refreshed.id) }
+        model.refinerSetup = .ready
+    }
+}
+
+// MARK: - Step 8: Correction learning consent
+
+/// Long-form consent screen for the default-on correction-learning toggle.
+/// Always passable; the toggle persists itself and is mirrored in
+/// Settings → General.
+private struct CorrectionLearningStep: View {
+    /// Applied live so a flip here takes effect this session, not next launch.
+    let inserter: TextInserter?
+    @State private var insertion = InsertionSettingsModel()
+
+    var body: some View {
+        StepLayout(symbol: "text.badge.checkmark", title: "Learn From Your Edits") {
+            Text("For 15 seconds after inserting text, Voxi watches the field it typed into. Fix a word or two, and the correction joins your personal dictionary — so next time it comes out right.")
+                .foregroundStyle(.secondary)
+            Text("Everything stays on this Mac. Learned words are visible and deletable in the Dictionary.")
+                .font(.callout.weight(.medium))
+
+            Toggle("Learn corrections from my edits", isOn: $insertion.settings.learnCorrections)
+                .toggleStyle(.switch)
+                .fixedSize()
+                .padding(.top, 4)
+
+            Text("Change anytime in Settings → General.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .onAppear {
+            insertion.apply = { [weak inserter] settings in
+                inserter?.settings = settings
+            }
+        }
+    }
+}
+
+// MARK: - Step 9: Hotkey summary
 
 private struct HotkeySummaryStep: View {
     let hotkeys: HotkeyController

@@ -61,7 +61,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // instance let the mic test steal — then nil — the pill's level sink.
         let view = OnboardingView(
             model: model, hotkeys: appState.hotkeys, capture: AudioCapture(),
-            registry: appState.registry)
+            registry: appState.registry, inserter: appState.inserter)
         let window = NSWindow(contentViewController: NSHostingController(rootView: view))
         window.title = "Welcome to Voxi"
         window.styleMask = [.titled, .closable]

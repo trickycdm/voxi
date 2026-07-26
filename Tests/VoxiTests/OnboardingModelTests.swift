@@ -29,20 +29,23 @@ import Testing
 
     @Test func globeStepHiddenWhenFnKeyIsFree() {
         let model = OnboardingModel(fnTriggersSystemAction: false, defaults: scratchDefaults())
-        #expect(model.steps == [.welcome, .microphone, .accessibility, .micTest, .speechModel, .hotkeys])
+        #expect(model.steps == [.welcome, .microphone, .accessibility, .micTest, .speechModel, .refiner, .corrections, .hotkeys])
     }
 
     @Test func globeStepShownWhenFnKeyTriggersSystemAction() {
         let model = OnboardingModel(fnTriggersSystemAction: true, defaults: scratchDefaults())
-        #expect(model.steps == [.welcome, .microphone, .accessibility, .globeKey, .micTest, .speechModel, .hotkeys])
+        #expect(model.steps == [.welcome, .microphone, .accessibility, .globeKey, .micTest, .speechModel, .refiner, .corrections, .hotkeys])
     }
 
     // MARK: Passability matrix
 
-    @Test func welcomeAndHotkeySummaryAreAlwaysPassable() {
+    @Test func stepsWithoutGatesAreAlwaysPassable() {
         let model = OnboardingModel(fnTriggersSystemAction: true, defaults: scratchDefaults())
-        // Freshly initialized: nothing granted, nothing tested.
+        // Freshly initialized: nothing granted, nothing tested. The refiner
+        // step is passable at idle because Next is its "not now" path.
         #expect(model.isPassable(.welcome))
+        #expect(model.isPassable(.refiner))
+        #expect(model.isPassable(.corrections))
         #expect(model.isPassable(.hotkeys))
         #expect(!model.isPassable(.microphone))
         #expect(!model.isPassable(.accessibility))
@@ -92,6 +95,26 @@ import Testing
         #expect(!model.isPassable(.speechModel))
         model.modelReady = true // pre-existing download or step completed
         #expect(model.isPassable(.speechModel))
+    }
+
+    @Test func refinerGateBlocksOnlyWhileDownloading() {
+        let model = OnboardingModel(fnTriggersSystemAction: false, defaults: scratchDefaults())
+        #expect(model.isPassable(.refiner))
+        model.refinerSetup = .downloading
+        #expect(!model.isPassable(.refiner))
+        model.refinerSetup = .ready
+        #expect(model.isPassable(.refiner))
+        model.refinerSetup = .idle // download failed: never stuck
+        #expect(model.isPassable(.refiner))
+    }
+
+    @Test func refinerStepIsSkippableWithoutEnabling() {
+        let model = allGranted()
+        while model.currentStep != .refiner { model.advance() }
+        #expect(model.refinerSetup == .idle)
+        #expect(model.canAdvance)
+        model.advance()
+        #expect(model.currentStep == .corrections)
     }
 
     // MARK: Navigation rules
@@ -159,6 +182,11 @@ import Testing
         model.micTestPassed = true
         model.advance() // -> speechModel
         model.modelReady = true
+        model.advance() // -> refiner
+        model.refinerSetup = .downloading
+        #expect(!model.canAdvance) // locked while the download runs
+        model.refinerSetup = .ready
+        model.advance() // -> corrections
         model.advance() // -> hotkeys
         #expect(model.isLastStep)
 

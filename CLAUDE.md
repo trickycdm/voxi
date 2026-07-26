@@ -22,7 +22,7 @@ Sources/Voxi/
   Dispatchers/    — Dispatcher protocol + registry; claude-code executor, stream-json parsing
   Persistence/    — GRDB: history (+FTS5), dictionary, actionCard; append-only migrations
   Hub/            — settings/history/dictionary window
-  Onboarding/     — first-run permission walkthrough (pure OnboardingModel)
+  Onboarding/     — first-run walkthrough: permissions + feature opt-ins (pure OnboardingModel)
 Tests/VoxiTests/  — Swift Testing, in-process against the app binary
 plans/            — plan.md + worklog.md per piece of work; steering/ = rules; docs/ = reference
 ```

@@ -62,11 +62,45 @@ actor LocalLLMEngine {
             await llm.respond(to: user, thinking: .suppressed)
             return llm.output
         }
+
+        /// Renders the template once with sentinels, splits it, and evaluates
+        /// the stable head into the KV cache. Returns nil when the template
+        /// doesn't round-trip the sentinels or context preparation fails.
+        func preparePrefill(systemPrefix: String) async -> LocalLLMPrefillPlan? {
+            llm.useResolvedTemplate(systemPrompt: systemPrefix + LocalLLMPrefillPlan.systemSentinel)
+            llm.history = []
+            let processed = llm.preprocess(LocalLLMPrefillPlan.userSentinel, [], .suppressed)
+            guard let plan = LocalLLMPrefillPlan(systemPrefix: systemPrefix, processedPrompt: processed)
+            else { return nil }
+            await llm.core.resetContext()
+            guard await llm.core.prepareContext(for: plan.contextPrefix) else { return nil }
+            return plan
+        }
+
+        /// Completes from a context prepared by `preparePrefill`; the input is
+        /// only the rendered remainder after the prefilled head.
+        func generateFromPrepared(completionInput: String) async -> String {
+            let response = await llm.core.generateResponseStream(
+                from: completionInput, thinking: .suppressed)
+            var output = ""
+            for await token in response {
+                output += token
+            }
+            return output
+        }
+    }
+
+    private struct PreparedContext {
+        let modelID: String
+        let plan: LocalLLMPrefillPlan
     }
 
     private var box: LLMBox?
     private var loadedModelID: String?
     private var isGenerating = false
+    /// Single-use prefilled context; consumed by the next matching generate,
+    /// discarded by a mismatching one, cleared on unload.
+    private var prepared: PreparedContext?
     /// Model IDs whose full SHA-256 was verified this app run — the expensive
     /// hash runs once per run, not per load.
     private var verifiedThisRun: Set<String> = []
@@ -118,8 +152,23 @@ actor LocalLLMEngine {
         isGenerating = true
         defer { isGenerating = false }
 
+        // A matching prefilled context skips re-evaluating the prompt head;
+        // any mismatch (dictionary changed mid-recording, model switched)
+        // discards it and takes the full path.
+        let preparedInput: String? = {
+            guard let prepared else { return nil }
+            self.prepared = nil
+            guard prepared.modelID == loadedModelID else { return nil }
+            return prepared.plan.completionInput(for: system, userInput: user)
+        }()
+
         let raw = try await withThrowingTaskGroup(of: String.self) { group in
-            group.addTask { await box.generate(system: system, user: user) }
+            group.addTask {
+                if let preparedInput {
+                    return await box.generateFromPrepared(completionInput: preparedInput)
+                }
+                return await box.generate(system: system, user: user)
+            }
             group.addTask {
                 try await Task.sleep(for: .seconds(timeout))
                 throw EngineError.timedOut
@@ -135,9 +184,28 @@ actor LocalLLMEngine {
         return cleaned
     }
 
+    /// Warms the KV cache with the stable prompt head while the user is still
+    /// speaking. Call at record start; best-effort — every failure path just
+    /// means the next generate takes the full-evaluation route.
+    func prefill(systemPrefix: String, modelID: String) async {
+        guard !isGenerating else { return }
+        if let prepared, prepared.modelID == modelID, prepared.plan.systemPrefix == systemPrefix {
+            return  // still-valid unconsumed prefill
+        }
+        prepared = nil
+        do { try ensureLoaded(modelID: modelID) } catch { return }
+        guard let box else { return }
+        isGenerating = true
+        defer { isGenerating = false }
+        if let plan = await box.preparePrefill(systemPrefix: systemPrefix) {
+            prepared = PreparedContext(modelID: modelID, plan: plan)
+        }
+    }
+
     func unload() {
         box = nil
         loadedModelID = nil
+        prepared = nil
     }
 
     // MARK: - Output sanitization

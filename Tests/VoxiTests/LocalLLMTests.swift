@@ -195,6 +195,53 @@ import Testing
     }
 }
 
+@Suite struct LocalLLMPrefillPlanTests {
+    /// A fake ChatML rendering of `prefix + systemSentinel` as the system
+    /// message and `userSentinel` as the user message.
+    private func rendered(prefix: String) -> String {
+        """
+        <|im_start|>system
+        \(prefix)\(LocalLLMPrefillPlan.systemSentinel)<|im_end|>
+        <|im_start|>user
+        \(LocalLLMPrefillPlan.userSentinel)<|im_end|>
+        <|im_start|>assistant
+        """
+    }
+
+    @Test func splitsRenderedPromptAroundSentinels() throws {
+        let plan = try #require(LocalLLMPrefillPlan(
+            systemPrefix: "SYSTEM", processedPrompt: rendered(prefix: "SYSTEM")))
+        #expect(plan.contextPrefix == "<|im_start|>system\nSYSTEM")
+        #expect(plan.promptSuffixAfterPrefix.contains("<|im_start|>user"))
+        #expect(plan.suffixAfterUserInput.contains("assistant"))
+        // Recombination must reproduce the full rendering exactly.
+        let completion = try #require(plan.completionInput(for: "SYSTEM", userInput: "hello"))
+        #expect(plan.contextPrefix + completion
+            == rendered(prefix: "SYSTEM").replacingOccurrences(
+                of: LocalLLMPrefillPlan.systemSentinel, with: "")
+                .replacingOccurrences(of: LocalLLMPrefillPlan.userSentinel, with: "hello"))
+    }
+
+    @Test func dynamicSuffixAppendsAfterPrefix() throws {
+        let plan = try #require(LocalLLMPrefillPlan(
+            systemPrefix: "STABLE", processedPrompt: rendered(prefix: "STABLE")))
+        let completion = try #require(
+            plan.completionInput(for: "STABLE + dynamic tail", userInput: "hi"))
+        #expect(completion.hasPrefix(" + dynamic tail"))
+        #expect(completion.contains("hi"))
+    }
+
+    @Test func stalePrefixReturnsNil() throws {
+        let plan = try #require(LocalLLMPrefillPlan(
+            systemPrefix: "OLD VOCAB", processedPrompt: rendered(prefix: "OLD VOCAB")))
+        #expect(plan.completionInput(for: "NEW VOCAB", userInput: "hi") == nil)
+    }
+
+    @Test func missingSentinelsFailInit() {
+        #expect(LocalLLMPrefillPlan(systemPrefix: "S", processedPrompt: "no sentinels here") == nil)
+    }
+}
+
 @Suite struct RefineEvalCLITests {
     @Test func parsesBareFlag() {
         #expect(CLIMode.parse(["--refine-eval"]) == .refineEval(inputPath: nil))

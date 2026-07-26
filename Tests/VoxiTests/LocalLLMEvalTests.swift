@@ -38,6 +38,43 @@ import Testing
     }
 
     @Test(.enabled(if: enabled), .timeLimit(.minutes(2)))
+    func prefilledGenerationMatchesFullPath() async throws {
+        let modelsDir = VoxiPaths.modelsDir(engineID: LocalLLMCatalog.engineID)
+        try #require(
+            LocalLLMCatalog.isDownloaded(LocalLLMCatalog.recommended, under: modelsDir))
+        let modelID = LocalLLMCatalog.recommended.id
+        let refiner = LocalRefiner(modelID: modelID)
+        let input = "um so the meeting is at 3pm you know on Tuesday"
+
+        // Full path first (also loads the model).
+        let fullStart = Date()
+        let fullOutput = try await refiner.refine(input, context: RefinementContext(mode: .dictation))
+        let fullElapsed = Date().timeIntervalSince(fullStart)
+
+        // Prefill the stable prefix (empty vocabulary = exactly what refine
+        // renders for an empty dictionary), then refine again.
+        await LocalLLMEngine.shared.prefill(
+            systemPrefix: LocalLLMPrompts.stablePrefix(vocabulary: []), modelID: modelID)
+        let prefilledStart = Date()
+        let prefilledOutput = try await refiner.refine(input, context: RefinementContext(mode: .dictation))
+        let prefilledElapsed = Date().timeIntervalSince(prefilledStart)
+
+        #expect(!prefilledOutput.isEmpty)
+        #expect(!LocalLLMEvalCorpus.verdict(input: input, output: prefilledOutput).isChatbotResponse)
+        // Both paths should produce cleanup-shaped output of similar length.
+        #expect(abs(prefilledOutput.count - fullOutput.count) < fullOutput.count)
+        // The prefilled path must not be slower than the full path.
+        #expect(prefilledElapsed <= fullElapsed + 1)
+
+        // A stale prefill (different vocabulary) must degrade gracefully to
+        // the full path, not fail.
+        await LocalLLMEngine.shared.prefill(
+            systemPrefix: LocalLLMPrompts.stablePrefix(vocabulary: ["StaleTerm"]), modelID: modelID)
+        let afterStale = try await refiner.refine(input, context: RefinementContext(mode: .dictation))
+        #expect(!afterStale.isEmpty)
+    }
+
+    @Test(.enabled(if: enabled), .timeLimit(.minutes(2)))
     func fillersRemovedAndScratchThatHonored() async throws {
         let modelsDir = VoxiPaths.modelsDir(engineID: LocalLLMCatalog.engineID)
         try #require(

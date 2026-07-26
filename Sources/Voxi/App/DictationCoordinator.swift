@@ -88,7 +88,19 @@ final class DictationCoordinator {
         onStateChange?(.recording(mode: kind.pillMode, level: 0))
         Task { [weak self] in
             guard let self else { return }
-            self.dictionaryTerms = await self.loadDictionaryTerms()
+            let terms = await self.loadDictionaryTerms()
+            self.dictionaryTerms = terms
+            // Warm the on-device refiner's KV cache while the user speaks.
+            // Same terms snapshot as process() uses, so the prefilled prefix
+            // matches the generate-time prompt for this session. Command mode
+            // skips it — the local backend hands cards to the rules path.
+            let config = RefinerConfig.load()
+            if config.backend == .localLLM, case .dictation = kind {
+                await LocalLLMEngine.shared.prefill(
+                    systemPrefix: LocalLLMPrompts.stablePrefix(vocabulary: terms.map(\.canonical)),
+                    modelID: config.localModelID
+                )
+            }
         }
     }
 

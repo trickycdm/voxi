@@ -94,6 +94,20 @@ final class AppDatabase: Sendable {
             }
         }
 
+        migrator.registerMigration("v3") { db in
+            // Log of wrong→right pairs picked up by post-insert correction
+            // learning, so the Hub can show what has been learned. The pair
+            // is enforced via the dictionary entry it was folded into; this
+            // table only records that (and when) it happened.
+            try db.create(table: "learnedCorrection") { t in
+                t.primaryKey("uuid", .text)
+                t.column("wrong", .text).notNull().collate(.nocase)
+                t.column("right", .text).notNull().collate(.nocase)
+                t.column("learnedAt", .datetime).notNull().indexed()
+                t.uniqueKey(["wrong", "right"])
+            }
+        }
+
         return migrator
     }
 }

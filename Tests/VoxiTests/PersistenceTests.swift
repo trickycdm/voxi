@@ -87,6 +87,35 @@ private func makeCard(
         #expect(migrated.log == "old log")
         #expect(migrated.sessionID == nil)
     }
+
+    @Test func v3CreatesLearnedCorrectionPreservingV2Rows() async throws {
+        // Build a database exactly as a v2 install left it, with a
+        // learned-style dictionary entry.
+        let queue = try DatabaseQueue()
+        let migrator = AppDatabase.migrator
+        try migrator.migrate(queue, upTo: "v2")
+        try await queue.write { db in
+            try db.execute(
+                sql: "INSERT INTO dictionaryEntry (uuid, term, variants, createdAt) VALUES (?, ?, ?, ?)",
+                arguments: ["22222222-2222-2222-2222-222222222222", "Jordan", #"["Jordn"]"#, fixedDate()]
+            )
+        }
+
+        try migrator.migrate(queue)
+
+        let state = try await queue.read { db in
+            try (
+                tableExists: db.tableExists("learnedCorrection"),
+                entry: DictionaryEntry.fetchOne(db, key: "22222222-2222-2222-2222-222222222222"),
+                learnedCount: LearnedCorrection.fetchCount(db)
+            )
+        }
+        #expect(state.tableExists)
+        #expect(state.entry?.term == "Jordan")
+        #expect(state.entry?.variants == ["Jordn"])
+        // Pre-existing learned pairs have no log rows — history starts empty.
+        #expect(state.learnedCount == 0)
+    }
 }
 
 @Suite struct FTSQuerySanitizerTests {
@@ -266,6 +295,65 @@ private func makeCard(
         try await store.upsert(entry)
         try await store.delete(id: entry.id)
         #expect(try await store.all().isEmpty)
+    }
+}
+
+@Suite struct LearnedCorrectionStoreTests {
+    @Test func upsertInsertsAndRoundTrips() async throws {
+        let store = LearnedCorrectionStore(database: try AppDatabase(inMemory: true))
+        let correction = LearnedCorrection(wrong: "Jordn", right: "Jordan", learnedAt: fixedDate())
+        try await store.upsert(correction)
+        #expect(try await store.all() == [correction])
+    }
+
+    @Test func upsertIsCaseInsensitiveOnPairAndBumpsLearnedAt() async throws {
+        let store = LearnedCorrectionStore(database: try AppDatabase(inMemory: true))
+        let original = LearnedCorrection(wrong: "Jordn", right: "Jordan", learnedAt: fixedDate())
+        try await store.upsert(original)
+
+        let relearned = LearnedCorrection(wrong: "jordn", right: "JORDAN", learnedAt: fixedDate(100))
+        let stored = try await store.upsert(relearned)
+
+        let all = try await store.all()
+        #expect(all.count == 1)
+        // Existing row refreshed in place: identity preserved, learnedAt bumped.
+        #expect(stored.id == original.id)
+        #expect(all[0].id == original.id)
+        #expect(all[0].learnedAt == fixedDate(100))
+    }
+
+    @Test func allOrdersNewestFirst() async throws {
+        let store = LearnedCorrectionStore(database: try AppDatabase(inMemory: true))
+        try await store.upsert(LearnedCorrection(wrong: "a", right: "A", learnedAt: fixedDate()))
+        try await store.upsert(LearnedCorrection(wrong: "b", right: "B", learnedAt: fixedDate(200)))
+        try await store.upsert(LearnedCorrection(wrong: "c", right: "C", learnedAt: fixedDate(100)))
+        let rights = try await store.all().map(\.right)
+        #expect(rights == ["B", "C", "A"])
+    }
+
+    @Test func distinctPairsForSameRightBothStored() async throws {
+        let store = LearnedCorrectionStore(database: try AppDatabase(inMemory: true))
+        try await store.upsert(LearnedCorrection(wrong: "Jordn", right: "Jordan", learnedAt: fixedDate()))
+        try await store.upsert(LearnedCorrection(wrong: "Jordon", right: "Jordan", learnedAt: fixedDate(1)))
+        #expect(try await store.all().count == 2)
+    }
+
+    @Test func deleteRemovesPair() async throws {
+        let store = LearnedCorrectionStore(database: try AppDatabase(inMemory: true))
+        let correction = LearnedCorrection(wrong: "Jordn", right: "Jordan")
+        try await store.upsert(correction)
+        try await store.delete(id: correction.id)
+        #expect(try await store.all().isEmpty)
+    }
+
+    @Test func deleteAllRightRemovesEveryPairForTermCaseInsensitively() async throws {
+        let store = LearnedCorrectionStore(database: try AppDatabase(inMemory: true))
+        try await store.upsert(LearnedCorrection(wrong: "Jordn", right: "Jordan"))
+        try await store.upsert(LearnedCorrection(wrong: "Jordon", right: "JORDAN"))
+        try await store.upsert(LearnedCorrection(wrong: "Voxy", right: "Voxi"))
+        try await store.deleteAll(right: "jordan")
+        let remaining = try await store.all()
+        #expect(remaining.map(\.right) == ["Voxi"])
     }
 }
 

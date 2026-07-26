@@ -112,7 +112,7 @@ struct GeneralSettingsSection: View {
             Toggle(isOn: $insertion.settings.learnCorrections) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Learn corrections from my edits")
-                    Text("If you fix a word right after dictating, Voxi adds the correction to your dictionary — on this Mac only.")
+                    Text("If you fix a word right after dictating, Voxi adds the correction to your dictionary — on this Mac only. See what's been learned under Dictionary → Learned Corrections.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

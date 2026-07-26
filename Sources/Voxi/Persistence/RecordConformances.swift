@@ -40,6 +40,32 @@ extension HistoryEntry: FetchableRecord, PersistableRecord {
     }
 }
 
+extension LearnedCorrection: FetchableRecord, PersistableRecord {
+    static let databaseTableName = "learnedCorrection"
+
+    enum Columns {
+        static let wrong = Column("wrong")
+        static let right = Column("right")
+        static let learnedAt = Column("learnedAt")
+    }
+
+    init(row: Row) throws {
+        self.init(
+            id: row["uuid"],
+            wrong: row["wrong"],
+            right: row["right"],
+            learnedAt: row["learnedAt"]
+        )
+    }
+
+    func encode(to container: inout PersistenceContainer) throws {
+        container["uuid"] = id.uuidString.lowercased()
+        container["wrong"] = wrong
+        container["right"] = right
+        container["learnedAt"] = learnedAt
+    }
+}
+
 extension DictionaryEntry: FetchableRecord, PersistableRecord {
     static let databaseTableName = "dictionaryEntry"
 

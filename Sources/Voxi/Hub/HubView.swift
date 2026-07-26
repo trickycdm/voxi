@@ -54,8 +54,10 @@ struct HubView: View {
                 databaseUnavailable
             }
         case .dictionary:
-            if let store = appState.dictionaryStore {
-                DictionaryView(store: store)
+            if let store = appState.dictionaryStore,
+                let learnedStore = appState.learnedCorrectionStore
+            {
+                DictionaryView(store: store, learnedStore: learnedStore)
             } else {
                 databaseUnavailable
             }

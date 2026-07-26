@@ -7,17 +7,21 @@ import SwiftUI
 @Observable
 final class DictionaryModel {
     private(set) var entries: [DictionaryEntry] = []
+    private(set) var learned: [LearnedCorrection] = []
     private(set) var lastError: String?
 
     let store: DictionaryStore
+    let learnedStore: LearnedCorrectionStore
 
-    init(store: DictionaryStore) {
+    init(store: DictionaryStore, learnedStore: LearnedCorrectionStore) {
         self.store = store
+        self.learnedStore = learnedStore
     }
 
     func load() async {
         do {
             entries = try await store.all()
+            learned = try await learnedStore.all()
             lastError = nil
         } catch {
             lastError = error.localizedDescription
@@ -50,6 +54,30 @@ final class DictionaryModel {
     func delete(_ entry: DictionaryEntry) async {
         do {
             try await store.delete(id: entry.id)
+            // Learned pairs are enforced through the entry — with it gone,
+            // drop them from the learned list too so it never shows pairs
+            // that no longer do anything.
+            try await learnedStore.deleteAll(right: entry.term)
+            await load()
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    /// Deletes a learned pair AND stops enforcing it: the `wrong` variant is
+    /// stripped from the matching dictionary entry. A bare term is kept —
+    /// it may have been added manually, and still usefully biases the ASR.
+    func unlearn(_ correction: LearnedCorrection) async {
+        do {
+            try await learnedStore.delete(id: correction.id)
+            if var entry = try await store.all().first(where: {
+                $0.term.caseInsensitiveCompare(correction.right) == .orderedSame
+            }) {
+                entry.variants.removeAll {
+                    $0.caseInsensitiveCompare(correction.wrong) == .orderedSame
+                }
+                try await store.upsert(entry)
+            }
             await load()
         } catch {
             lastError = error.localizedDescription
@@ -62,8 +90,8 @@ struct DictionaryView: View {
     @State private var addingEntry = false
     @State private var editingEntry: DictionaryEntry?
 
-    init(store: DictionaryStore) {
-        _model = State(initialValue: DictionaryModel(store: store))
+    init(store: DictionaryStore, learnedStore: LearnedCorrectionStore) {
+        _model = State(initialValue: DictionaryModel(store: store, learnedStore: learnedStore))
     }
 
     var body: some View {
@@ -96,7 +124,7 @@ struct DictionaryView: View {
 
     @ViewBuilder
     private var content: some View {
-        if model.entries.isEmpty {
+        if model.entries.isEmpty && model.learned.isEmpty {
             ContentUnavailableView(
                 "No Terms",
                 systemImage: "character.book.closed",
@@ -106,14 +134,63 @@ struct DictionaryView: View {
             // without it the whole stack hugs content and floats mid-window.
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            List(model.entries) { entry in
-                DictionaryRowView(entry: entry) {
-                    editingEntry = entry
-                } onDelete: {
-                    Task { await model.delete(entry) }
+            List {
+                if !model.entries.isEmpty {
+                    Section("Terms") {
+                        ForEach(model.entries) { entry in
+                            DictionaryRowView(entry: entry) {
+                                editingEntry = entry
+                            } onDelete: {
+                                Task { await model.delete(entry) }
+                            }
+                        }
+                    }
+                }
+                Section("Learned Corrections") {
+                    if model.learned.isEmpty {
+                        Text("Corrections you make within a few seconds of a dictation landing will show up here.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(model.learned) { correction in
+                            LearnedCorrectionRowView(correction: correction) {
+                                Task { await model.unlearn(correction) }
+                            }
+                        }
+                    }
                 }
             }
             .listStyle(.inset)
+        }
+    }
+}
+
+/// One learned wrong→right pair with when it was picked up. Delete forgets
+/// the pair and stops enforcing it (strips the dictionary variant).
+struct LearnedCorrectionRowView: View {
+    let correction: LearnedCorrection
+    let onDelete: () -> Void
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline) {
+            VStack(alignment: .leading, spacing: 2) {
+                (Text(correction.wrong).foregroundStyle(.secondary)
+                    + Text(" → ").foregroundStyle(.secondary)
+                    + Text(correction.right).fontWeight(.medium))
+                    .lineLimit(1)
+                Text("Learned \(correction.learnedAt, format: .relative(presentation: .named))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button("Forget", systemImage: "trash", role: .destructive, action: onDelete)
+                .labelStyle(.iconOnly)
+                .buttonStyle(.borderless)
+                .help("Forget this correction and stop applying it")
+        }
+        .padding(.vertical, 2)
+        .contextMenu {
+            Button("Forget", role: .destructive, action: onDelete)
         }
     }
 }

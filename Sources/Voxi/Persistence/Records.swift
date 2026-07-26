@@ -39,6 +39,25 @@ struct HistoryEntry: Identifiable, Codable, Equatable, Sendable {
     }
 }
 
+/// One wrong→right pair picked up by post-insert correction learning.
+/// Pure log for the Hub's "Learned Corrections" list — enforcement happens
+/// through the dictionary entry the pair was folded into.
+struct LearnedCorrection: Identifiable, Codable, Equatable, Sendable {
+    var id: UUID
+    /// What was inserted (the mishearing).
+    var wrong: String
+    /// What the user corrected it to.
+    var right: String
+    var learnedAt: Date
+
+    init(id: UUID = UUID(), wrong: String, right: String, learnedAt: Date = Date()) {
+        self.id = id
+        self.wrong = wrong
+        self.right = right
+        self.learnedAt = learnedAt
+    }
+}
+
 /// Personal dictionary term fed to the transcriber/refiner.
 struct DictionaryEntry: Identifiable, Codable, Equatable, Sendable {
     var id: UUID

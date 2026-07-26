@@ -14,6 +14,7 @@ final class AppState {
     private(set) var database: AppDatabase?
     private(set) var historyStore: HistoryStore?
     private(set) var dictionaryStore: DictionaryStore?
+    private(set) var learnedCorrectionStore: LearnedCorrectionStore?
     private(set) var cardStore: CardStore?
 
     let registry = ASREngineRegistry(engines: ASREngineRegistry.makeDefaultEngines())
@@ -44,9 +45,11 @@ final class AppState {
             database = db
             let history = HistoryStore(database: db)
             let dictionary = DictionaryStore(database: db)
+            let learned = LearnedCorrectionStore(database: db)
             let cards = CardStore(database: db)
             historyStore = history
             dictionaryStore = dictionary
+            learnedCorrectionStore = learned
             cardStore = cards
 
             let coordinator = DictationCoordinator(
@@ -58,7 +61,7 @@ final class AppState {
                 cardStore: cards
             )
             self.coordinator = coordinator
-            wireCorrectionLearning(coordinator: coordinator, dictionary: dictionary)
+            wireCorrectionLearning(coordinator: coordinator, dictionary: dictionary, learned: learned)
 
             let resolver = RegistryResolver(registry: DispatcherRegistry.v1())
             let model = QueueModel(store: cards)
@@ -164,7 +167,8 @@ final class AppState {
     /// inserted). Gated by the "Learn corrections" setting at fire time so a
     /// toggle takes effect immediately.
     private func wireCorrectionLearning(
-        coordinator: DictationCoordinator, dictionary: DictionaryStore
+        coordinator: DictationCoordinator, dictionary: DictionaryStore,
+        learned: LearnedCorrectionStore
     ) {
         let observer = PostInsertObserver(
             readField: {
@@ -174,7 +178,7 @@ final class AppState {
             readFrontmost: { NSWorkspace.shared.frontmostApplication?.bundleIdentifier }
         )
         observer.onLearnedCorrection = { [weak self] correction in
-            self?.storeLearnedCorrection(correction, dictionary: dictionary)
+            self?.storeLearnedCorrection(correction, dictionary: dictionary, learned: learned)
         }
         postInsertObserver = observer
         coordinator.onInserted = { [weak self] insertedText, targetBundleID in
@@ -185,9 +189,15 @@ final class AppState {
     }
 
     private func storeLearnedCorrection(
-        _ correction: CorrectionInference.Correction, dictionary: DictionaryStore
+        _ correction: CorrectionInference.Correction, dictionary: DictionaryStore,
+        learned: LearnedCorrectionStore
     ) {
         Task {
+            // Log first (feeds the Hub's "Learned Corrections" list): the
+            // variant below may already exist — e.g. the pair was learned
+            // before the log table shipped — and that path returns early.
+            try? await learned.upsert(LearnedCorrection(
+                wrong: correction.wrong, right: correction.right))
             let entries = (try? await dictionary.all()) ?? []
             if var existing = entries.first(where: {
                 $0.term.caseInsensitiveCompare(correction.right) == .orderedSame

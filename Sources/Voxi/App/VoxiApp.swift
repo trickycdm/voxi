@@ -8,7 +8,10 @@ struct VoxiApp: App {
         // Template-rendered roundel (waveform in a circle) — the enamel-badge
         // brand mark; the system tints it for menu-bar appearance.
         MenuBarExtra("Voxi", image: "MenuBarRoundel") {
-            MenuBarContent()
+            // showOnboarding is injected as a closure: NSApp.delegate is
+            // SwiftUI's own wrapper under @NSApplicationDelegateAdaptor, so
+            // casting it to AppDelegate fails silently.
+            MenuBarContent(showOnboarding: { appDelegate.showOnboarding() })
                 .environment(appDelegate.appState)
         }
 
@@ -80,6 +83,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 struct MenuBarContent: View {
+    let showOnboarding: () -> Void
+
     @Environment(AppState.self) private var appState
     @Environment(\.openWindow) private var openWindow
 
@@ -114,7 +119,7 @@ struct MenuBarContent: View {
         Divider()
 
         Button("Run Onboarding Again") {
-            (NSApp.delegate as? AppDelegate)?.showOnboarding()
+            showOnboarding()
         }
 
         if let error = appState.lastError {

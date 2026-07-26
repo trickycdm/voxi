@@ -4,7 +4,7 @@
 
 ## The rules
 
-- **One `DatabaseQueue`, owned by `AppDatabase`, passed to stores.** No second connection, no ad-hoc SQL outside the store types (`HistoryStore`, `DictionaryStore`, `CardStore`).
+- **One `DatabaseQueue`, owned by `AppDatabase`, passed to stores.** No second connection, no ad-hoc SQL outside the store types (`HistoryStore`, `DictionaryStore`, `LearnedCorrectionStore`, `CardStore`).
 - **Migrations are append-only.** New schema = a new `migrator.registerMigration("vN")` block appended after the last one in `AppDatabase.migrator` — never edit a registered migration, ever (shipped databases have already run it). New columns are nullable or defaulted (`ALTER TABLE … ADD COLUMN`), so old rows stay valid.
 - **Records are `Sendable` value types with hand-written GRDB conformances** (`Records.swift` + `RecordConformances.swift`). Any field change touches three places in the same commit: the struct, `init(row:)`, and `encode(to:)`. Conventions inside conformances: UUIDs stored as lowercased strings; structured data as JSON in TEXT columns; a corrupt row throws `PersistenceError.corruptRow` rather than silently defaulting.
 - **Status fields change only through validated store helpers.** `ActionCard.status` transitions go through `CardStore` methods that enforce `CardStatus.canTransition(to:)` — never write a status column directly. Interrupted-at-crash cards are reconciled on launch (`CardStore.reconcileInterrupted`); preserve that invariant when adding states.

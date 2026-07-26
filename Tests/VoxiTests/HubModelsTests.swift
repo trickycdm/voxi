@@ -90,12 +90,14 @@ private func entry(_ text: String, raw: String? = nil) -> HistoryEntry {
 @MainActor
 @Suite struct HubDictionaryModelTests {
     private let store: DictionaryStore
+    private let learnedStore: LearnedCorrectionStore
     private let model: DictionaryModel
 
     init() throws {
         let database = try AppDatabase(inMemory: true)
         store = DictionaryStore(database: database)
-        model = DictionaryModel(store: store)
+        learnedStore = LearnedCorrectionStore(database: database)
+        model = DictionaryModel(store: store, learnedStore: learnedStore)
     }
 
     @Test func rejectsEmptyTerm() async throws {
@@ -136,5 +138,65 @@ private func entry(_ text: String, raw: String? = nil) -> HistoryEntry {
         let saved = try #require(model.entries.first)
         await model.delete(saved)
         #expect(model.entries.isEmpty)
+    }
+
+    @Test func loadPopulatesLearnedCorrections() async throws {
+        try await learnedStore.upsert(LearnedCorrection(wrong: "Jordn", right: "Jordan"))
+        await model.load()
+        #expect(model.learned.map(\.right) == ["Jordan"])
+    }
+
+    @Test func unlearnRemovesPairAndStripsVariant() async throws {
+        // Mirror what post-insert learning stores: entry + log row.
+        try await store.upsert(DictionaryEntry(term: "Jordan", variants: ["Jordn", "manual variant"]))
+        let correction = LearnedCorrection(wrong: "jordn", right: "jordan")
+        try await learnedStore.upsert(correction)
+        await model.load()
+
+        await model.unlearn(correction)
+
+        #expect(model.learned.isEmpty)
+        // Only the learned variant is stripped; the term and its other
+        // variants survive.
+        let entry = try #require(model.entries.first)
+        #expect(entry.term == "Jordan")
+        #expect(entry.variants == ["manual variant"])
+    }
+
+    @Test func unlearnLastVariantKeepsBareTerm() async throws {
+        try await store.upsert(DictionaryEntry(term: "Voxi", variants: ["Voxy"]))
+        let correction = LearnedCorrection(wrong: "Voxy", right: "Voxi")
+        try await learnedStore.upsert(correction)
+        await model.load()
+
+        await model.unlearn(correction)
+
+        #expect(model.entries.first?.term == "Voxi")
+        #expect(model.entries.first?.variants.isEmpty == true)
+    }
+
+    @Test func unlearnWithoutMatchingEntryStillRemovesPair() async throws {
+        let correction = LearnedCorrection(wrong: "Jordn", right: "Jordan")
+        try await learnedStore.upsert(correction)
+        await model.load()
+
+        await model.unlearn(correction)
+
+        #expect(model.learned.isEmpty)
+        #expect(model.lastError == nil)
+    }
+
+    @Test func deleteEntryAlsoDropsItsLearnedPairs() async throws {
+        try await store.upsert(DictionaryEntry(term: "Jordan", variants: ["Jordn"]))
+        try await learnedStore.upsert(LearnedCorrection(wrong: "Jordn", right: "jordan"))
+        try await learnedStore.upsert(LearnedCorrection(wrong: "Voxy", right: "Voxi"))
+        await model.load()
+        let entry = try #require(model.entries.first)
+
+        await model.delete(entry)
+
+        #expect(model.entries.isEmpty)
+        // Pairs enforced through the deleted entry go with it; others stay.
+        #expect(model.learned.map(\.right) == ["Voxi"])
     }
 }

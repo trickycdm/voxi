@@ -12,7 +12,7 @@ Descriptive runbook for shipping a signed, notarised DMG to the marketing site. 
 ## Procedure
 
 1. **Bump versions** in `project.yml`: `CFBundleShortVersionString` (X.Y.Z) and `CFBundleVersion` (monotonic integer — bump on every release, including re-releases of the same marketing version). Commit.
-2. **Build**: `./Scripts/release.sh X.Y.Z`. Stages: preflight → xcodegen → Release archive → export → signature checks → notarise + staple the .app → DMG (signed) → notarise + staple the DMG → Gatekeeper assessment → Sparkle appcast item (EdDSA-sign the DMG, insert into `appcast.xml`). Fails closed at every gate. `--skip-notarise` runs only the local stages (useful for shaking out build issues without notarisation round-trips).
+2. **Build**: `./Scripts/release.sh X.Y.Z`. Stages: preflight (incl. `Scripts/privacy-preflight.sh` — the PRIVACY_AUDIT.md gate) → xcodegen → Release archive → export → signature checks → notarise + staple the .app → DMG (signed) → notarise + staple the DMG → Gatekeeper assessment → Sparkle appcast item (EdDSA-sign the DMG, insert into `appcast.xml`). Fails closed at every gate. `--skip-notarise` runs only the local stages (useful for shaking out build issues without notarisation round-trips).
 3. **Manual verification** (required before publishing; hardened runtime and TCC cannot be verified headlessly):
    - Quarantine-simulate: `xattr -w com.apple.quarantine "0083;$(printf %x $(date +%s));Safari;" dist/Voxi-X.Y.Z.dmg`, open, drag to /Applications, launch. Expect the Gatekeeper "verified" flow, no malware warning.
    - Expect TCC re-prompts on the dev machine (Release presents a different identity than the Debug build — see `steering/MACOS_PLATFORM.md`).

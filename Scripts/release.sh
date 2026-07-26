@@ -28,6 +28,7 @@ SKIP_NOTARISE=false
 # --- 1. Preflight ------------------------------------------------------------
 log "preflight"
 [[ -z "$(git -C "$ROOT" status --porcelain)" ]] || die "working tree not clean — commit or stash first"
+"$ROOT/Scripts/privacy-preflight.sh" || die "privacy preflight failed (PRIVACY_AUDIT.md)"
 grep -q "CFBundleShortVersionString: \"$VERSION\"" "$ROOT/project.yml" \
   || die "version $VERSION does not match CFBundleShortVersionString in project.yml"
 if git -C "$ROOT" tag -l "v$VERSION" | grep -q .; then

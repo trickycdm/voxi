@@ -14,7 +14,7 @@ audit below and append a dated result.
 | 4 | History and dictionary are local only | GRDB SQLite at `~/Library/Application Support/Voxi/voxi.sqlite`; no sync, no upload; history clearable in the Hub. |
 | 5 | No telemetry, analytics, or crash-reporting SDKs | No such imports in `Sources/` or dependencies in `project.yml` (deps: WhisperKit, FluidAudio, GRDB, Sparkle). |
 | 6 | Transcript content and API keys are never logged | Every `voxiLog` interpolation carries error descriptions, device metadata, or card IDs — never transcript text or key material (`steering/CODING_CONVENTIONS.md` rule). |
-| 7 | The complete network surface is enumerable | (a) user-configured refiner endpoints; (b) one-time speech-model downloads from Hugging Face via WhisperKit/FluidAudio; (c) Sparkle appcast + DMG from GitHub (Release builds only); (d) user-dispatched claude runs. Nothing else. |
+| 7 | The complete network surface is enumerable | (a) user-configured refiner endpoints; (b) one-time model downloads from Hugging Face — speech models via WhisperKit/FluidAudio, on-device refiner GGUFs via `LocalLLMDownloader` (pinned revisions, SHA-256 verified); (c) Sparkle appcast + DMG from GitHub (Release builds only); (d) user-dispatched claude runs. Nothing else. The on-device refiner itself performs inference fully in-process — transcripts never reach the network through it. |
 
 Known accepted tradeoffs (documented in `docs/architecture.md` Open Items): LLM API
 keys live in UserDefaults, not Keychain (migration is a parked work item).

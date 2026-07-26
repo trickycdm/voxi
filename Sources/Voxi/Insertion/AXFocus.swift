@@ -156,6 +156,98 @@ enum AXFocus {
         return ns.substring(with: NSRange(location: range.location, length: range.length))
     }
 
+    /// Full value read, capped at `fullValueReadLimit` UTF-16 units. Used by
+    /// the post-insert correction observer; nil for huge documents — learning
+    /// isn't worth a megabyte AX copy from a hung word processor. WebKit
+    /// content that exposes no `kAXValue` falls back to text-marker ranges.
+    static func fullText(of element: AXUIElement) -> String? {
+        if let count = numberOfCharacters(of: element), count <= fullValueReadLimit,
+           let value = copyString(element, kAXValueAttribute) {
+            return value
+        }
+        return textMarkerText(of: element)
+    }
+
+    /// WebKit/browser text via AXTextMarker ranges — content areas there often
+    /// return nothing for `kAXValue` (incantation from ghost-pepper, MIT).
+    private static func textMarkerText(of element: AXUIElement) -> String? {
+        func marker(_ attribute: String) -> AXTextMarker? {
+            var ref: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(element, attribute as CFString, &ref) == .success,
+                  let ref, CFGetTypeID(ref) == AXTextMarkerGetTypeID() else { return nil }
+            return unsafeBitCast(ref, to: AXTextMarker.self)
+        }
+        guard let start = marker("AXStartTextMarker"),
+              let end = marker("AXEndTextMarker") else { return nil }
+        let range = AXTextMarkerRangeCreate(kCFAllocatorDefault, start, end)
+        var out: CFTypeRef?
+        guard AXUIElementCopyParameterizedAttributeValue(
+            element, "AXStringForTextMarkerRange" as CFString, range, &out) == .success,
+              let text = out as? String, (text as NSString).length <= fullValueReadLimit
+        else { return nil }
+        return text
+    }
+
+    /// Duck-typing probe: does the app expose an *enabled* Paste item (⌘V,
+    /// no other modifiers) in its menu bar? Apps that do support pasting even
+    /// when the focused element advertises no AX text attributes — and apps
+    /// that don't (no menu bar, Paste disabled) are not paste targets at all.
+    /// Used only where tier selection is otherwise blind (no focused element).
+    static func hasEnabledPasteMenuItem(pid: pid_t) -> Bool {
+        let appElement = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(appElement, messagingTimeout)
+        var menuBarRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(
+            appElement, kAXMenuBarAttribute as CFString, &menuBarRef) == .success,
+              let menuBarRef, CFGetTypeID(menuBarRef) == AXUIElementGetTypeID() else {
+            return false
+        }
+        let menuBar = unsafeBitCast(menuBarRef, to: AXUIElement.self)
+
+        for menuBarItem in childElements(of: menuBar) {
+            for submenu in childElements(of: menuBarItem) {
+                for menuItem in childElements(of: submenu) where isPasteMenuItem(menuItem) {
+                    var enabledRef: CFTypeRef?
+                    if AXUIElementCopyAttributeValue(
+                        menuItem, kAXEnabledAttribute as CFString, &enabledRef) == .success,
+                       let enabled = enabledRef as? Bool {
+                        return enabled
+                    }
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
+    private static func isPasteMenuItem(_ element: AXUIElement) -> Bool {
+        var charRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(
+            element, "AXMenuItemCmdChar" as CFString, &charRef) == .success,
+              let cmdChar = charRef as? String, cmdChar.lowercased() == "v" else {
+            return false
+        }
+        // AXMenuItemCmdModifiers: 0 = Command alone (no Shift/Option/Control).
+        var modRef: CFTypeRef?
+        if AXUIElementCopyAttributeValue(
+            element, "AXMenuItemCmdModifiers" as CFString, &modRef) == .success,
+           let modifiers = modRef as? Int, modifiers != 0 {
+            return false
+        }
+        return true
+    }
+
+    private static func childElements(of element: AXUIElement) -> [AXUIElement] {
+        var ref: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(
+            element, kAXChildrenAttribute as CFString, &ref) == .success,
+              let children = ref as? [AnyObject] else { return [] }
+        return children.compactMap {
+            guard CFGetTypeID($0) == AXUIElementGetTypeID() else { return nil }
+            return ($0 as! AXUIElement)
+        }
+    }
+
     private static func numberOfCharacters(of element: AXUIElement) -> Int? {
         var ref: CFTypeRef?
         guard AXUIElementCopyAttributeValue(

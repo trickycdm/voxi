@@ -8,9 +8,10 @@ Three tiers, orchestrated by `TextInserter`: AX direct write (`AXDirectInserter`
 
 ## Public surface
 
-- `TextInserter` — `@MainActor`; the only entry point.
-- `InsertionMethod`, `InsertionOutcome`, `InsertionError`, `InsertionSettings` — `InsertionContract.swift`.
+- `TextInserter` — `@MainActor`; the only entry point for insertion. Its pure `autoTierDecision` is the unit-tested `.auto` decision table.
+- `InsertionMethod`, `InsertionOutcome`, `InsertionError`, `InsertionSettings` — `InsertionContract.swift` + `TextInserter.swift`.
 - `SmartFormatter` — pure, unit-tested.
+- `CorrectionInference` (pure wrong→right diff heuristic) + `PostInsertObserver` (post-insert polling shell) — the correction-learning loop; AppState wires learned pairs into the dictionary. Gated by `InsertionSettings.learnCorrections`.
 
 ## Status & rules
 
@@ -19,6 +20,8 @@ Three tiers, orchestrated by `TextInserter`: AX direct write (`AXDirectInserter`
 - **Refuse secure fields**: `AXSecureTextField` subrole → no insertion, ever. The machine-global `IsSecureEventInputEnabled()` flag alone must NOT refuse — MDM/endpoint agents hold it session-long and it killed all insertion on managed Macs. `SecureInput` resolves the holder PID from the IORegistry (`IOConsoleUsers`, via `IORegistryGetRootEntry` — the `IOService:/` path form silently lacks the property) and refuses only when the holder is the target app (or unidentifiable).
 - Pasteboard restore only if `changeCount` is unchanged after ≥300 ms, and only when the user toggle allows (macOS 15.4+ shows pasteboard-read alerts).
 - Electron apps skip tier 1 (denylist heuristic + best-effort `AXManualAccessibility`).
+- **No focused element → menu-bar duck-typing probe** (`AXFocus.hasEnabledPasteMenuItem`: enabled ⌘V Paste item, no other modifiers) decides between tier 2 and the clipboard fallback (`writeForUser` + `InsertionError.noPasteTarget`) — never a blind ⌘V into an app with no paste target. The fallback copy is deliberately NOT marked transient.
+- `AXFocus.fullText` falls back to AXTextMarker ranges for WebKit content that returns nothing via `kAXValue` — this also powers the post-insert observer's readback in browsers.
 
 ## Gotchas
 

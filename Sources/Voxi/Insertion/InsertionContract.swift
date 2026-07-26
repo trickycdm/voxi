@@ -18,6 +18,9 @@ enum InsertionError: Error, LocalizedError {
     /// The target app (or an unidentifiable process) holds secure event input.
     case secureInputHeld(by: String?)
     case noFocusedElement
+    /// No focused element and the app duck-types as paste-incapable; the
+    /// text was left on the clipboard so the user's words still land.
+    case noPasteTarget
     case allTiersFailed(String)
 
     var errorDescription: String? {
@@ -30,6 +33,8 @@ enum InsertionError: Error, LocalizedError {
                 "Secure input is on (holder unknown) — not inserting"
             }
         case .noFocusedElement: "No focused text field found"
+        case .noPasteTarget:
+            "No text field here — your words are on the clipboard, press ⌘V where you want them"
         case .allTiersFailed(let why): "Text insertion failed: \(why)"
         }
     }

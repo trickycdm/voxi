@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Observation
 import os
@@ -29,6 +30,8 @@ final class AppState {
     private(set) var logWindows: LogWindowController?
 
     private var eventTask: Task<Void, Never>?
+    /// Post-insert correction learning (created in start(), lives app-long).
+    @ObservationIgnored private var postInsertObserver: PostInsertObserver?
     /// Display-only auto-gain for the pill waveform (see DisplayAutoGain).
     @ObservationIgnored private var pillGain = DisplayAutoGain()
 
@@ -55,6 +58,7 @@ final class AppState {
                 cardStore: cards
             )
             self.coordinator = coordinator
+            wireCorrectionLearning(coordinator: coordinator, dictionary: dictionary)
 
             let resolver = RegistryResolver(registry: DispatcherRegistry.v1())
             let model = QueueModel(store: cards)
@@ -153,6 +157,54 @@ final class AppState {
     }
 
     // MARK: - Pill wiring
+
+    /// Post-paste correction learning: after a dictation lands, watch the
+    /// target field briefly and fold a narrow wrong→right fix into the
+    /// personal dictionary (term = the corrected word, variant = what we
+    /// inserted). Gated by the "Learn corrections" setting at fire time so a
+    /// toggle takes effect immediately.
+    private func wireCorrectionLearning(
+        coordinator: DictationCoordinator, dictionary: DictionaryStore
+    ) {
+        let observer = PostInsertObserver(
+            readField: {
+                guard let element = AXFocus.frontmostTarget()?.element else { return nil }
+                return AXFocus.fullText(of: element)
+            },
+            readFrontmost: { NSWorkspace.shared.frontmostApplication?.bundleIdentifier }
+        )
+        observer.onLearnedCorrection = { [weak self] correction in
+            self?.storeLearnedCorrection(correction, dictionary: dictionary)
+        }
+        postInsertObserver = observer
+        coordinator.onInserted = { [weak self] insertedText, targetBundleID in
+            guard let self, self.inserter.settings.learnCorrections else { return }
+            self.postInsertObserver?.begin(
+                insertedText: insertedText, targetBundleID: targetBundleID)
+        }
+    }
+
+    private func storeLearnedCorrection(
+        _ correction: CorrectionInference.Correction, dictionary: DictionaryStore
+    ) {
+        Task {
+            let entries = (try? await dictionary.all()) ?? []
+            if var existing = entries.first(where: {
+                $0.term.caseInsensitiveCompare(correction.right) == .orderedSame
+            }) {
+                guard !existing.variants.contains(where: {
+                    $0.caseInsensitiveCompare(correction.wrong) == .orderedSame
+                }) else { return }
+                existing.variants.append(correction.wrong)
+                try? await dictionary.upsert(existing)
+            } else {
+                try? await dictionary.upsert(DictionaryEntry(
+                    term: correction.right, variants: [correction.wrong], createdAt: Date()))
+            }
+            // Never log the learned content — only that learning happened.
+            voxiLog.info("post-insert learning stored a dictionary correction")
+        }
+    }
 
     private func wirePill(coordinator: DictationCoordinator) {
         coordinator.onStateChange = { [weak self] state in

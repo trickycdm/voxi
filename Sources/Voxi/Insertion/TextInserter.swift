@@ -18,8 +18,25 @@ struct InsertionSettings: Codable, Sendable, Equatable {
     var markConcealed: Bool = false
     /// Delay before restoring the clipboard; floored at 300ms at use site.
     var restoreDelayMilliseconds: Int = 300
+    /// Learn wrong→right dictionary pairs from the user's edits right after
+    /// an insertion (PostInsertObserver).
+    var learnCorrections: Bool = true
 
     static let defaultsKey = "insertionSettings"
+
+    init() {}
+
+    /// Lenient decoding: fields added in later builds fall back to their
+    /// defaults instead of resetting the whole persisted struct.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let defaults = InsertionSettings()
+        method = try container.decodeIfPresent(InsertionMethod.self, forKey: .method) ?? defaults.method
+        restoreClipboard = try container.decodeIfPresent(Bool.self, forKey: .restoreClipboard) ?? defaults.restoreClipboard
+        markConcealed = try container.decodeIfPresent(Bool.self, forKey: .markConcealed) ?? defaults.markConcealed
+        restoreDelayMilliseconds = try container.decodeIfPresent(Int.self, forKey: .restoreDelayMilliseconds) ?? defaults.restoreDelayMilliseconds
+        learnCorrections = try container.decodeIfPresent(Bool.self, forKey: .learnCorrections) ?? defaults.learnCorrections
+    }
 
     static func load(from defaults: UserDefaults = .standard) -> InsertionSettings {
         guard let data = defaults.data(forKey: defaultsKey),
@@ -91,9 +108,18 @@ final class TextInserter {
             return InsertionOutcome(tier: .pasteboard, insertedText: formatted)
 
         case .auto:
-            // Electron: AX writes return .success without inserting — skip tier 1.
-            if let element = target.element, !isElectron, AXFocus.canSetSelectedText(element) {
-                switch AXDirectInserter.insert(formatted, into: element) {
+            let decision = Self.autoTierDecision(
+                hasElement: target.element != nil,
+                isElectron: isElectron,
+                canSetSelectedText: target.element.map(AXFocus.canSetSelectedText) ?? false,
+                hasEnabledPasteItem: {
+                    target.element != nil || AXFocus.hasEnabledPasteMenuItem(pid: target.appPID)
+                }
+            )
+            switch decision {
+            case .tryDirectThenPasteboard:
+                // Force-unwrap safe: decision requires hasElement.
+                switch AXDirectInserter.insert(formatted, into: target.element!) {
                 case .inserted:
                     return InsertionOutcome(tier: .accessibility, insertedText: formatted)
                 case .caretDidNotMove:
@@ -102,10 +128,39 @@ final class TextInserter {
                     // May have partially landed — retrying would double-insert.
                     throw InsertionError.allTiersFailed("AX write indeterminate: \(why)")
                 }
+            case .pasteboard:
+                break
+            case .clipboardFallback:
+                // The user's words must land somewhere they control.
+                PasteboardInserter.writeForUser(formatted)
+                throw InsertionError.noPasteTarget
             }
             try await pasteboardInsert(formatted)
             return InsertionOutcome(tier: .pasteboard, insertedText: formatted)
         }
+    }
+
+    enum AutoTierDecision: Equatable {
+        case tryDirectThenPasteboard
+        case pasteboard
+        case clipboardFallback
+    }
+
+    /// Pure tier decision for `.auto` (unit-tested). Electron skips tier 1
+    /// (AX writes return .success without inserting). When there is no
+    /// focused element at all we are blind about where a synthetic ⌘V would
+    /// land — the menu-bar duck-typing probe (lazily evaluated, it's an AX
+    /// walk) decides between pasteboard and the clipboard fallback.
+    static func autoTierDecision(
+        hasElement: Bool,
+        isElectron: Bool,
+        canSetSelectedText: Bool,
+        hasEnabledPasteItem: () -> Bool
+    ) -> AutoTierDecision {
+        if hasElement, !isElectron, canSetSelectedText {
+            return .tryDirectThenPasteboard
+        }
+        return hasEnabledPasteItem() ? .pasteboard : .clipboardFallback
     }
 
     private func pasteboardInsert(_ text: String) async throws {

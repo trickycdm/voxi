@@ -29,6 +29,15 @@ enum PasteboardInserter {
         }
     }
 
+    /// Leaves text on the clipboard for the user to paste manually — the
+    /// no-paste-target fallback. Deliberately NOT marked transient: unlike a
+    /// transcript en route to ⌘V, this copy must persist for the user.
+    static func writeForUser(_ text: String, to pasteboard: NSPasteboard = .general) {
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
+        pasteboard.setData(Data(), forType: .voxiSource)
+    }
+
     /// Writes the transcript with clipboard-manager markers. Returns the
     /// changeCount captured AFTER the write — the token guarding the restore.
     static func writeTranscript(

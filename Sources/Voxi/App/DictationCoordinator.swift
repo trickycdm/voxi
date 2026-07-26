@@ -28,6 +28,9 @@ final class DictationCoordinator {
     /// pipeline works headless.
     var onStateChange: ((PillState) -> Void)?
     var onCardQueued: ((ActionCard) -> Void)?
+    /// Fires after a dictation lands in the target app — the shell attaches
+    /// the post-insert correction observer here.
+    var onInserted: ((_ insertedText: String, _ targetAppBundleID: String?) -> Void)?
 
     init(
         capture: AudioCapture,
@@ -160,6 +163,7 @@ final class DictationCoordinator {
                 )
                 let inserted = try await inserter.insert(outcome.text)
                 onStateChange?(.idle)
+                onInserted?(inserted.insertedText, targetApp)
                 try await historyStore.save(HistoryEntry(
                     rawTranscript: trimmed,
                     finalText: inserted.insertedText,

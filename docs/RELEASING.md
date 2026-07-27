@@ -8,6 +8,7 @@ Descriptive runbook for shipping a signed, notarised DMG to the marketing site. 
 - notarytool keychain profile `voxi-notary` (`xcrun notarytool store-credentials voxi-notary --apple-id … --team-id F7H963S3B4` with an app-specific password).
 - `gh` authenticated; the marketing site repo's Cloudflare secrets configured (see that repo's `docs/DEPLOYMENT.md`).
 - Sparkle EdDSA key in the login Keychain ("Private key for signing Sparkle updates", created 2026-07-19). The first `sign_update` run from a freshly downloaded tools copy raises a Keychain access dialog — click Always Allow or the release stalls at stage 8.
+- **The login keychain must be unlocked** when release.sh runs. A locked keychain (after sleep/lock) makes notarytool report "No Keychain password item found for profile: voxi-notary" — the profile isn't gone, it's just invisible; a non-interactive shell can't trigger the unlock prompt. Fix: `security unlock-keychain ~/Library/Keychains/login.keychain-db` in a terminal, then rerun (hit at 0.4.2, 2026-07-27).
 
 ## Procedure
 

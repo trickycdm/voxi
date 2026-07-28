@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// Expanded card: editable prompt, dispatcher parameters, dispatch/cancel/
-/// retry controls, live log, result summary, and the raw-transcript
+/// Expanded card, per the Rev A board: prompt well, context chips (folder +
+/// resume-session), two dispatch-time action buttons, advanced disclosure for
+/// the headless-only knobs, live log, result summary, and the raw-transcript
 /// disclosure with its refinement badge.
 struct CardDetailView: View {
     let card: ActionCard
@@ -14,20 +15,35 @@ struct CardDetailView: View {
     @State private var promptDraft = ""
     @State private var params: [String: String] = [:]
     @State private var lastError: String?
+    @State private var advancedExpanded = false
 
     private var isEditable: Bool { card.status == .queued }
 
-    private var dispatcher: (any Dispatcher)? {
-        resolver.dispatcher(for: card.dispatcherID)
+    /// One card face regardless of the stored dispatcherID: the union of
+    /// every registered dispatcher's specs (the button pressed picks the
+    /// dispatcher at dispatch time).
+    private var combinedSpecs: [DispatcherParamSpec] {
+        QueueLogic.combinedSpecs(resolver.allDispatchers.map(\.paramSpecs))
     }
 
-    private var paramSpecs: [DispatcherParamSpec] {
-        dispatcher?.paramSpecs ?? []
+    private var advancedSpecs: [DispatcherParamSpec] {
+        combinedSpecs.filter { $0.placement == .advanced }
+    }
+
+    private var workingDirectory: String {
+        (params[QueueParams.workingDirectoryKey] ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Set but pointing nowhere — cheap view-level check; the dispatcher's
+    /// own existence check at execute remains the real gate.
+    private var directoryMissingOnDisk: Bool {
+        !workingDirectory.isEmpty && !FileManager.default.fileExists(atPath: workingDirectory)
     }
 
     private var canDispatch: Bool {
-        QueueLogic.canDispatch(status: card.status, prompt: promptDraft, params: params, specs: paramSpecs)
-            && dispatcher != nil
+        QueueLogic.canDispatch(status: card.status, prompt: promptDraft, params: params, specs: combinedSpecs)
+            && !directoryMissingOnDisk
             && !runner.isActive(card.id)
     }
 
@@ -56,12 +72,12 @@ struct CardDetailView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            promptSection
-            dispatcherSection
-            if !paramSpecs.isEmpty {
-                paramsSection
-            }
+            promptWell
+            contextChips
             controls
+            if isEditable, !advancedSpecs.isEmpty {
+                advancedSection
+            }
             if let lastError {
                 Text(lastError)
                     .font(.caption)
@@ -90,70 +106,152 @@ struct CardDetailView: View {
 
     // MARK: Prompt
 
-    private var promptSection: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Prompt")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
+    /// Inset well, separated by tone (no stroke). Locked cards render plain
+    /// selectable text in the identical well — a disabled TextEditor would
+    /// block copying the prompt of a finished run.
+    @ViewBuilder
+    private var promptWell: some View {
+        if isEditable {
             TextEditor(text: $promptDraft)
                 .font(.body)
+                .foregroundStyle(Color.voxiInk)
+                .scrollContentBackground(.hidden)
+                .padding(Theme.Space.sm)
                 .frame(minHeight: 64, maxHeight: 140)
-                .disabled(!isEditable)
-                .foregroundStyle(isEditable ? .primary : .secondary)
-                .overlay(
-                    RoundedRectangle(cornerRadius: Theme.Radius.control)
-                        .strokeBorder(Color.voxiHairline)
-                )
+                .background(Color.voxiInset, in: RoundedRectangle(cornerRadius: Theme.Radius.control))
                 .onChange(of: promptDraft) {
                     guard isEditable, promptDraft != card.prompt else { return }
                     let text = promptDraft
                     Task { await save { try await model.updatePrompt(id: card.id, to: text) } }
                 }
+        } else {
+            Text(card.prompt)
+                .font(.body)
+                .foregroundStyle(Color.voxiInk2)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(Theme.Space.sm)
+                .background(Color.voxiInset, in: RoundedRectangle(cornerRadius: Theme.Radius.control))
         }
     }
 
-    // MARK: Dispatcher
+    // MARK: Context chips
 
-    /// Rendered even when locked so terminal cards show what ran them. No
-    /// local @State: the binding reads through to `card.dispatcherID`, so the
-    /// GRDB observation echo updates the selection and the rendered param
-    /// specs in one pass, like every other field in this view.
-    private var dispatcherSection: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Dispatcher")
+    private var contextChips: some View {
+        HStack(spacing: Theme.Space.sm) {
+            folderChip
+            if let session = params[QueueParams.resumeSessionIDKey], !session.isEmpty {
+                sessionChip(session)
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private var folderProblem: Bool {
+        workingDirectory.isEmpty || directoryMissingOnDisk
+    }
+
+    /// The working directory as a capsule menu: repo name on the face; full
+    /// path, recents, and Browse… inside. Warning styling recolors icon+text
+    /// only — the capsule fill stays inset (status colors belong to status).
+    private var folderChip: some View {
+        Menu {
+            if !workingDirectory.isEmpty {
+                // Plain Text renders as a disabled item — the full path,
+                // since the chip face only shows the last component.
+                Text(workingDirectory)
+                Divider()
+            }
+            let recents = RecentDirs.list()
+            ForEach(recents, id: \.self) { dir in
+                Button(dir) { setParam(QueueParams.workingDirectoryKey, to: dir) }
+            }
+            if !recents.isEmpty { Divider() }
+            Button("Browse…") { pickDirectory(for: QueueParams.workingDirectoryKey) }
+        } label: {
+            HStack(spacing: Theme.Space.xs) {
+                Image(systemName: folderProblem ? "exclamationmark.triangle" : "folder")
+                    .imageScale(.small)
+                Text(workingDirectory.isEmpty
+                    ? "Choose folder"
+                    : (workingDirectory as NSString).lastPathComponent)
+                    .font(.caption.weight(.medium))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                if isEditable {
+                    Image(systemName: "chevron.down")
+                        .imageScale(.small)
+                        .foregroundStyle(Color.voxiInk3)
+                }
+            }
+            .padding(.horizontal, Theme.Space.sm + 2)
+            .padding(.vertical, 4)
+            .foregroundStyle(folderProblem ? Color.voxiWarning : Color.voxiInk2)
+            .background(Color.voxiInset, in: Capsule())
+            .contentShape(Capsule())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .frame(maxWidth: 260, alignment: .leading)
+        .disabled(!isEditable)
+        .help(workingDirectory.isEmpty ? "Choose the folder claude runs in" : workingDirectory)
+    }
+
+    /// Only exists on follow-up cards (the param is plumbing, never typed).
+    /// Dashed hairline is deliberate: tone can't say "derived state".
+    private func sessionChip(_ session: String) -> some View {
+        HStack(spacing: Theme.Space.xs) {
+            Image(systemName: "arrow.uturn.backward")
+                .imageScale(.small)
+            Text("resumes session \(String(session.prefix(6)))")
+                .font(.caption.weight(.medium))
+                .lineLimit(1)
+            if isEditable {
+                Button {
+                    clearResumeSession()
+                } label: {
+                    Image(systemName: "xmark")
+                        .imageScale(.small)
+                        .foregroundStyle(Color.voxiInk3)
+                }
+                .buttonStyle(.plain)
+                .help("Detach from the previous session")
+            }
+        }
+        .padding(.horizontal, Theme.Space.sm + 2)
+        .padding(.vertical, 4)
+        .foregroundStyle(Color.voxiInk2)
+        .overlay(
+            Capsule().strokeBorder(
+                Color.voxiHairline, style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+        )
+        .fixedSize()
+    }
+
+    private func clearResumeSession() {
+        guard isEditable else { return }
+        var updated = params
+        updated.removeValue(forKey: QueueParams.resumeSessionIDKey)
+        params = updated
+        Task { await save { try await model.updateParams(id: card.id, to: updated) } }
+    }
+
+    // MARK: Advanced (headless-only knobs, closed by default)
+
+    private var advancedSection: some View {
+        DisclosureGroup(isExpanded: $advancedExpanded) {
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(advancedSpecs) { spec in
+                    paramRow(spec)
+                }
+            }
+            .padding(.top, Theme.Space.xs)
+        } label: {
+            Text("Advanced — headless options")
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-            Picker("Dispatcher", selection: Binding(
-                get: { card.dispatcherID },
-                set: { newID in
-                    guard isEditable, newID != card.dispatcherID else { return }
-                    Task { await save { try await model.updateDispatcher(id: card.id, to: newID) } }
-                }
-            )) {
-                ForEach(resolver.allDispatchers, id: \.id) { dispatcher in
-                    Text(dispatcher.displayName).tag(dispatcher.id)
-                }
-                if dispatcher == nil {
-                    // A card carrying an unregistered id stays visible (and
-                    // undispatchable) rather than silently snapping to a
-                    // registered one.
-                    Text(card.dispatcherID).tag(card.dispatcherID)
-                }
-            }
-            .labelsHidden()
-            .pickerStyle(.menu)
-            .fixedSize()
-            .disabled(!isEditable)
-        }
-    }
-
-    // MARK: Params
-
-    private var paramsSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            ForEach(paramSpecs) { spec in
-                paramRow(spec)
-            }
+                .foregroundStyle(Color.voxiInk3)
         }
     }
 
@@ -187,6 +285,8 @@ struct CardDetailView: View {
         }
     }
 
+    /// Fallback row for future dispatchers that spec an advanced directory —
+    /// the union's primary directory renders as the folder chip instead.
     private func directoryField(_ spec: DispatcherParamSpec) -> some View {
         HStack(spacing: 6) {
             TextField("~/path/to/project", text: paramBinding(spec.id))
@@ -263,21 +363,20 @@ struct CardDetailView: View {
     private var controls: some View {
         HStack {
             if card.status == .queued {
-                Button("Dispatch") {
-                    if let dir = params[QueueParams.workingDirectoryKey], !dir.isEmpty {
-                        RecentDirs.remember(dir)
-                    }
-                    Task {
-                        await save { try await runner.dispatch(cardID: card.id) }
-                    }
+                Button("Open in iTerm") {
+                    dispatchTapped(as: ClaudeCodeITermDispatcher.dispatcherID)
                 }
+                .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)
                 .disabled(!canDispatch)
+                Button("Run Headless") {
+                    dispatchTapped(as: ClaudeCodeDispatcher.dispatcherID)
+                }
+                .buttonStyle(.bordered)
+                .disabled(!canDispatch)
                 // Two cards once sat stuck queued because nothing said why
-                // the button was grey — always name the blocker.
-                if let blocker = QueueLogic.dispatchBlocker(
-                    status: card.status, prompt: promptDraft, params: params, specs: paramSpecs
-                ) {
+                // the buttons were grey — always name the blocker.
+                if let blocker = dispatchBlockerText {
                     Text(blocker)
                         .font(.callout)
                         .foregroundStyle(Color.voxiInk3)
@@ -294,30 +393,50 @@ struct CardDetailView: View {
                 }
             }
             if card.status.isTerminal, card.sessionID != nil {
+                Button("Open in iTerm") { openResumeInTerminal() }
+                    .help("Resume this run's session interactively (Terminal if iTerm isn't installed)")
+                    .disabled(resumeWorkingDirectory == nil)
                 Button("Follow up") {
                     Task { await save { try await model.followUp(from: card) } }
                 }
                 .help("New card that resumes this run's session")
-                Button("Open in iTerm") {
-                    openResumeInTerminal()
-                }
-                .help("Resume this run's session interactively (Terminal if iTerm isn't installed)")
-                .disabled(resumeWorkingDirectory == nil)
             }
             Spacer()
             if card.status != .dispatched && card.status != .running {
-                Button("Delete", role: .destructive) {
+                Button("Delete") {
                     Task { await save { try await model.delete(id: card.id) } }
                 }
+                .buttonStyle(.plain)
+                .font(.callout)
+                .foregroundStyle(Color.voxiInk3)
             }
         }
     }
 
+    private var dispatchBlockerText: String? {
+        if let blocker = QueueLogic.dispatchBlocker(
+            status: card.status, prompt: promptDraft, params: params, specs: combinedSpecs
+        ) {
+            return blocker
+        }
+        if directoryMissingOnDisk {
+            return "Folder doesn't exist"
+        }
+        return nil
+    }
+
+    /// The dispatch button pressed picks the dispatcher; the choice is
+    /// recorded atomically with queued → dispatched by the runner.
+    private func dispatchTapped(as dispatcherID: String) {
+        if !workingDirectory.isEmpty {
+            RecentDirs.remember(workingDirectory)
+        }
+        Task { await save { try await runner.dispatch(cardID: card.id, as: dispatcherID) } }
+    }
+
     /// The card's working directory, when usable for an interactive resume.
     private var resumeWorkingDirectory: String? {
-        let dir = (params[QueueParams.workingDirectoryKey] ?? "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return dir.isEmpty ? nil : dir
+        workingDirectory.isEmpty ? nil : workingDirectory
     }
 
     /// Fire-and-forget UI convenience, not card lifecycle — the queue's

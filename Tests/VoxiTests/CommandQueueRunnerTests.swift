@@ -14,13 +14,18 @@ private struct FakeDispatcher: Dispatcher {
         case neverEnding(events: [DispatchEvent])
     }
 
-    let id = "fake"
+    let id: String
     let displayName = "Fake Dispatcher"
     let paramSpecs = [
         DispatcherParamSpec(id: "workingDirectory", label: "Working directory", kind: .directory, required: true)
     ]
     let script: Script
     let recorder = InvocationRecorder()
+
+    init(script: Script, id: String = "fake") {
+        self.script = script
+        self.id = id
+    }
 
     final actor InvocationRecorder {
         private(set) var prompts: [String] = []
@@ -508,5 +513,159 @@ private final class FinishRecorder {
         #expect(try await harness.card(first.id).status == .failed)   // cancelled in flight
         #expect(try await harness.card(second.id).status == .queued)  // never started
         #expect(harness.runner.drainRemaining == nil)
+    }
+}
+
+// MARK: - Dispatch-time dispatcher override
+
+@MainActor
+@Suite struct QueueRunnerDispatchAsTests {
+    /// Two registered fakes so the override can be told apart from the
+    /// stored dispatcher by which recorder saw the prompt.
+    @MainActor
+    private struct TwoDispatcherHarness {
+        let store: CardStore
+        let runner: QueueRunner
+        let stored: FakeDispatcher
+        let override: FakeDispatcher
+
+        init() throws {
+            store = CardStore(database: try AppDatabase(inMemory: true))
+            stored = FakeDispatcher(
+                script: .finish(events: [], result: DispatchResult(success: true, exitCode: 0, resultText: nil)),
+                id: "stored")
+            override = FakeDispatcher(
+                script: .finish(events: [], result: DispatchResult(success: true, exitCode: 0, resultText: nil)),
+                id: "override")
+            runner = QueueRunner(
+                store: store,
+                resolver: FakeResolver(dispatchers: [stored.id: stored, override.id: override]),
+                flushInterval: .milliseconds(20))
+        }
+
+        func insertCard() async throws -> ActionCard {
+            let card = ActionCard(
+                title: "Test card", summary: "s", prompt: "Do the thing.",
+                rawTranscript: "r", refinedByLLM: false,
+                dispatcherID: "stored",
+                paramsJSON: #"{"workingDirectory":"/tmp"}"#)
+            try await store.insert(card)
+            return card
+        }
+    }
+
+    @Test func overrideRunsThatDispatcherAndPersistsItsID() async throws {
+        let h = try TwoDispatcherHarness()
+        let card = try await h.insertCard()
+
+        try await h.runner.dispatch(cardID: card.id, as: "override")
+        await h.runner.awaitCompletion(cardID: card.id)
+
+        #expect(await h.override.recorder.prompts == ["Do the thing."])
+        #expect(await h.stored.recorder.prompts.isEmpty)
+        let finished = try #require(try await h.store.fetch(id: card.id))
+        #expect(finished.dispatcherID == "override")
+        #expect(finished.status == .succeeded)
+        #expect(finished.paramsJSON == #"{"workingDirectory":"/tmp"}"#)
+    }
+
+    @Test func nilOverrideUsesStoredDispatcher() async throws {
+        let h = try TwoDispatcherHarness()
+        let card = try await h.insertCard()
+
+        try await h.runner.dispatch(cardID: card.id)
+        await h.runner.awaitCompletion(cardID: card.id)
+
+        #expect(await h.stored.recorder.prompts == ["Do the thing."])
+        #expect(await h.override.recorder.prompts.isEmpty)
+        let finished = try #require(try await h.store.fetch(id: card.id))
+        #expect(finished.dispatcherID == "stored")
+    }
+
+    @Test func overrideOnTerminalCardThrowsWithoutRewritingID() async throws {
+        let h = try TwoDispatcherHarness()
+        let card = try await h.insertCard()
+        try await h.runner.dispatch(cardID: card.id)
+        await h.runner.awaitCompletion(cardID: card.id)
+
+        await #expect(throws: PersistenceError.self) {
+            try await h.runner.dispatch(cardID: card.id, as: "override")
+        }
+        let unchanged = try #require(try await h.store.fetch(id: card.id))
+        #expect(unchanged.dispatcherID == "stored")
+    }
+
+    @Test func unknownOverrideFailsCardAndRecordsAttemptedID() async throws {
+        let h = try TwoDispatcherHarness()
+        let card = try await h.insertCard()
+
+        try await h.runner.dispatch(cardID: card.id, as: "ghost")
+        await h.runner.awaitCompletion(cardID: card.id)
+
+        let failed = try #require(try await h.store.fetch(id: card.id))
+        #expect(failed.status == .failed)
+        // The record reflects what was attempted.
+        #expect(failed.dispatcherID == "ghost")
+        #expect(failed.log.contains("Unknown dispatcher: ghost"))
+    }
+
+    @Test func secondDispatchWithDifferentOverrideLosesRace() async throws {
+        let h = try TwoDispatcherHarness()
+        let card = try await h.insertCard()
+
+        try await h.runner.dispatch(cardID: card.id, as: "override")
+        await #expect(throws: Error.self) {
+            try await h.runner.dispatch(cardID: card.id, as: "stored")
+        }
+        await h.runner.awaitCompletion(cardID: card.id)
+        let finished = try #require(try await h.store.fetch(id: card.id))
+        #expect(finished.dispatcherID == "override")
+    }
+}
+
+// MARK: - beginDispatch (store-level atomicity)
+
+@MainActor
+@Suite struct CardStoreBeginDispatchTests {
+    @Test func recordsDispatcherStatusAndTimestampAtomically() async throws {
+        let store = CardStore(database: try AppDatabase(inMemory: true))
+        let card = ActionCard(
+            title: "t", summary: "s", prompt: "p", rawTranscript: "r",
+            refinedByLLM: false, dispatcherID: "a", paramsJSON: "{}")
+        try await store.insert(card)
+
+        let updated = try await store.beginDispatch(id: card.id, dispatcherID: "b")
+        #expect(updated.dispatcherID == "b")
+        #expect(updated.status == .dispatched)
+        #expect(updated.dispatchedAt != nil)
+
+        let fetched = try #require(try await store.fetch(id: card.id))
+        #expect(fetched.dispatcherID == "b")
+        #expect(fetched.status == .dispatched)
+    }
+
+    @Test func nilDispatcherIDKeepsStoredID() async throws {
+        let store = CardStore(database: try AppDatabase(inMemory: true))
+        let card = ActionCard(
+            title: "t", summary: "s", prompt: "p", rawTranscript: "r",
+            refinedByLLM: false, dispatcherID: "a", paramsJSON: "{}")
+        try await store.insert(card)
+
+        let updated = try await store.beginDispatch(id: card.id)
+        #expect(updated.dispatcherID == "a")
+        #expect(updated.status == .dispatched)
+    }
+
+    @Test func rejectsNonQueuedCard() async throws {
+        let store = CardStore(database: try AppDatabase(inMemory: true))
+        let card = ActionCard(
+            title: "t", summary: "s", prompt: "p", rawTranscript: "r",
+            refinedByLLM: false, dispatcherID: "a", paramsJSON: "{}")
+        try await store.insert(card)
+        _ = try await store.beginDispatch(id: card.id)
+
+        await #expect(throws: PersistenceError.self) {
+            _ = try await store.beginDispatch(id: card.id, dispatcherID: "b")
+        }
     }
 }

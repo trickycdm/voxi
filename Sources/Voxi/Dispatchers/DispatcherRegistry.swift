@@ -16,11 +16,12 @@ struct DispatcherRegistry: Sendable {
         byID[id]
     }
 
-    /// What new cards are created with; the picker lets the user switch a
-    /// queued card to any registered dispatcher.
+    /// What new cards are created with. The stored id is what "Run All"
+    /// drains use; a dispatch button can override it at dispatch time.
     static let defaultDispatcherID = ClaudeCodeITermDispatcher.dispatcherID
 
-    /// Interactive hand-off first (the default tops the picker), headless second.
+    /// Interactive hand-off first, headless second — registration order is
+    /// the card face's spec-union order.
     static func v1() -> DispatcherRegistry {
         DispatcherRegistry([ClaudeCodeITermDispatcher(), ClaudeCodeDispatcher()])
     }

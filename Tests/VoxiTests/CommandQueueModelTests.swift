@@ -84,32 +84,18 @@ private func makeModel() throws -> (QueueModel, CardStore) {
         #expect(stored.prompt == makeDraft().prompt)
     }
 
-    @Test func dispatcherSwitchPersistsAndLeavesParamsUntouched() async throws {
+    @Test func updateParamsWithRemovedKeyPersistsWithoutIt() async throws {
+        // The session chip's ✕ removes the key entirely (not "") — the
+        // stored JSON must come back clean.
         let (model, store) = try makeModel()
         let card = try await model.addCard(
-            draft: makeDraft(), rawTranscript: "r", dispatcherID: "claude-code-iterm",
-            params: ["workingDirectory": "/repos", "maxTurns": "50"])
+            draft: makeDraft(), rawTranscript: "r", dispatcherID: "d",
+            params: ["workingDirectory": "/repos", "resumeSessionID": "abc123"])
 
-        try await model.updateDispatcher(id: card.id, to: "claude-code")
+        try await model.updateParams(id: card.id, to: ["workingDirectory": "/repos"])
 
         let stored = try #require(try await store.fetch(id: card.id))
-        #expect(stored.dispatcherID == "claude-code")
-        // Keys the new dispatcher doesn't spec stay inert in the JSON.
-        #expect(try QueueParams.decode(stored.paramsJSON) == [
-            "workingDirectory": "/repos", "maxTurns": "50",
-        ])
-    }
-
-    @Test func dispatcherSwitchRejectedOnceDispatched() async throws {
-        let (model, store) = try makeModel()
-        let card = try await model.addCard(draft: makeDraft(), rawTranscript: "r", dispatcherID: "claude-code")
-        try await store.setStatus(id: card.id, to: .dispatched)
-
-        await #expect(throws: QueueError.cardNotEditable(.dispatched)) {
-            try await model.updateDispatcher(id: card.id, to: "claude-code-iterm")
-        }
-        let stored = try #require(try await store.fetch(id: card.id))
-        #expect(stored.dispatcherID == "claude-code")
+        #expect(try QueueParams.decode(stored.paramsJSON) == ["workingDirectory": "/repos"])
     }
 
     @Test func editUnknownCardThrowsNotFound() async throws {
@@ -213,6 +199,32 @@ private func makeModel() throws -> (QueueModel, CardStore) {
         DispatcherParamSpec(id: "workingDirectory", label: "Working directory", kind: .directory, required: true),
         DispatcherParamSpec(id: "extraFlags", label: "Extra flags", kind: .string, required: false),
     ]
+
+    @Test func combinedSpecsDedupesFirstOccurrenceWins() {
+        let a = [
+            DispatcherParamSpec(id: "shared", label: "First", kind: .directory, required: true),
+            DispatcherParamSpec(id: "onlyA", label: "A", kind: .string, required: false),
+        ]
+        let b = [
+            DispatcherParamSpec(id: "shared", label: "Second", kind: .string, required: false),
+            DispatcherParamSpec(id: "onlyB", label: "B", kind: .string, required: false),
+        ]
+        let union = QueueLogic.combinedSpecs([a, b])
+        #expect(union.map(\.id) == ["shared", "onlyA", "onlyB"])
+        #expect(union[0].label == "First")
+    }
+
+    @Test func registryUnionShapeMatchesTheCardFace() {
+        // The real registry's union: what the card actually renders.
+        let union = QueueLogic.combinedSpecs(DispatcherRegistry.v1().all.map(\.paramSpecs))
+        #expect(union.map(\.id) == [
+            "workingDirectory", "resumeSessionID", "permissionMode", "maxTurns", "extraFlags",
+        ])
+        // Union-level gating is equivalent to per-dispatcher gating…
+        #expect(union.filter(\.required).map(\.id) == ["workingDirectory"])
+        // …and a hidden-but-required param would be an invisible blocker.
+        #expect(union.allSatisfy { !($0.placement == .hidden && $0.required) })
+    }
 
     @Test func dispatchRequiresQueuedStatus() {
         let params = ["workingDirectory": "/tmp"]

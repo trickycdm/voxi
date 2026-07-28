@@ -23,7 +23,10 @@ struct ClaudeCodeITermDispatcher: Dispatcher {
         [
             DispatcherParamSpec(id: "workingDirectory", label: "Working Directory", kind: .directory, required: true),
             // Lets a follow-up card from a headless run resume interactively.
-            DispatcherParamSpec(id: "resumeSessionID", label: "Resume Session ID", kind: .string, required: false),
+            // Hidden from the form; surfaced as the resume-session chip.
+            DispatcherParamSpec(
+                id: "resumeSessionID", label: "Resume Session ID", kind: .string,
+                required: false, placement: .hidden),
         ]
     }
 

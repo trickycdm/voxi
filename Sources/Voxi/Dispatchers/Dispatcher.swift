@@ -26,6 +26,14 @@ struct DispatcherParamSpec: Identifiable, Sendable {
         case choice(options: [String])          // rendered as a menu picker
         case integer(range: ClosedRange<Int>)   // digit field, clamped to range
     }
+    /// Where the card UI surfaces the param: on the card face, behind the
+    /// "Advanced" disclosure, or nowhere (plumbing the UI represents some
+    /// other way — e.g. the resume-session chip).
+    enum Placement: Sendable, Equatable {
+        case primary
+        case advanced
+        case hidden
+    }
     /// Key in the card's params JSON object.
     let id: String
     let label: String
@@ -35,13 +43,18 @@ struct DispatcherParamSpec: Identifiable, Sendable {
     /// Defaults stay out of the stored params so later default changes apply
     /// to every not-yet-dispatched card.
     let defaultValue: String?
+    let placement: Placement
 
-    init(id: String, label: String, kind: Kind, required: Bool, defaultValue: String? = nil) {
+    init(
+        id: String, label: String, kind: Kind, required: Bool,
+        defaultValue: String? = nil, placement: Placement = .primary
+    ) {
         self.id = id
         self.label = label
         self.kind = kind
         self.required = required
         self.defaultValue = defaultValue
+        self.placement = placement
     }
 }
 

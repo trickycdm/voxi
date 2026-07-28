@@ -306,6 +306,9 @@ private func parse(_ line: String) -> [ClaudeEvent] {
         if case .integer(let range) = specs[2].kind {
             #expect(range == ClaudeCodeDispatcher.maxTurnsRange)
         } else { Issue.record("maxTurns should be an integer param") }
+        // Card-face placement: directory on the face, knobs behind Advanced,
+        // resume session surfaced as the chip (never a form field).
+        #expect(specs.map(\.placement) == [.primary, .advanced, .advanced, .hidden, .advanced])
     }
 
     @Test func rejectsMissingWorkingDirectory() async {
@@ -622,6 +625,7 @@ private func parse(_ line: String) -> [ClaudeEvent] {
         if case .directory = specs[0].kind {} else { Issue.record("workingDirectory should be a directory param") }
         #expect(!specs[1].required)
         if case .string = specs[1].kind {} else { Issue.record("resumeSessionID should be a string param") }
+        #expect(specs.map(\.placement) == [.primary, .hidden])
     }
 
     @Test func rejectsMissingWorkingDirectory() async {

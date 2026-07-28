@@ -13,8 +13,7 @@ extension CardStore {
         title: String? = nil,
         summary: String? = nil,
         prompt: String? = nil,
-        paramsJSON: String? = nil,
-        dispatcherID: String? = nil
+        paramsJSON: String? = nil
     ) async throws {
         try await database.dbQueue.write { db in
             guard var card = try ActionCard.fetchOne(db, key: id.uuidString.lowercased()) else {
@@ -27,8 +26,28 @@ extension CardStore {
             if let summary { card.summary = summary }
             if let prompt { card.prompt = prompt }
             if let paramsJSON { card.paramsJSON = paramsJSON }
-            if let dispatcherID { card.dispatcherID = dispatcherID }
             try card.update(db)
+        }
+    }
+
+    /// The queued → dispatched transition, atomically recording which
+    /// dispatcher runs the card (the dispatch button pressed picks it at
+    /// dispatch time). One transaction = the run record can never disagree
+    /// with what actually ran, even under racing dispatch calls. Returns the
+    /// updated card so the runner works from post-transition state.
+    func beginDispatch(id: UUID, dispatcherID: String? = nil) async throws -> ActionCard {
+        try await database.dbQueue.write { db in
+            guard var card = try ActionCard.fetchOne(db, key: id.uuidString.lowercased()) else {
+                throw PersistenceError.notFound(id)
+            }
+            guard card.status.canTransition(to: .dispatched) else {
+                throw PersistenceError.illegalTransition(from: card.status, to: .dispatched)
+            }
+            if let dispatcherID { card.dispatcherID = dispatcherID }
+            card.status = .dispatched
+            card.dispatchedAt = Date()
+            try card.update(db)
+            return card
         }
     }
 

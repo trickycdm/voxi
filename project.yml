@@ -55,8 +55,8 @@ targets:
       properties:
         CFBundleName: Voxi
         CFBundleDisplayName: Voxi
-        CFBundleShortVersionString: "0.5.0"
-        CFBundleVersion: "7"
+        CFBundleShortVersionString: "0.6.0"
+        CFBundleVersion: "8"
         LSUIElement: true
         LSMinimumSystemVersion: "14.0"
         LSApplicationCategoryType: public.app-category.productivity

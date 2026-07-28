@@ -68,6 +68,14 @@ enum RecentDirs {
 
 /// Pure UI-decision helpers, kept out of the views so they're unit-testable.
 enum QueueLogic {
+    /// The card face renders one spec union across all registered dispatchers
+    /// (dispatch-time button choice means no single stored dispatcher owns the
+    /// form). First occurrence of an id wins, order preserved.
+    static func combinedSpecs(_ specLists: [[DispatcherParamSpec]]) -> [DispatcherParamSpec] {
+        var seen = Set<String>()
+        return specLists.flatMap { $0 }.filter { seen.insert($0.id).inserted }
+    }
+
     /// Dispatch is only offered for queued cards with a non-blank prompt
     /// whose required parameters are all present and non-blank. (The prompt
     /// rule also keeps a fresh follow-up card parked until it's written.)

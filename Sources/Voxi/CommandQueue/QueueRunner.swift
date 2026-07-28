@@ -5,7 +5,8 @@ import Observation
 /// adapted to this at integration time; tests inject fakes.
 protocol DispatcherResolving: Sendable {
     func dispatcher(for id: String) -> (any Dispatcher)?
-    /// Registration order, for the card's dispatcher picker.
+    /// Registration order — the card face renders the union of these
+    /// dispatchers' param specs.
     var allDispatchers: [any Dispatcher] { get }
 }
 
@@ -70,20 +71,20 @@ final class QueueRunner {
         handles[id] != nil
     }
 
-    /// Starts executing a queued card. Throws on double-dispatch or an
-    /// illegal starting state; failures after the card leaves `queued`
+    /// Starts executing a queued card. `dispatcherID` overrides the card's
+    /// stored dispatcher — the dispatch button pressed picks how the card
+    /// runs, recorded atomically with the queued → dispatched transition so
+    /// the run record can't disagree with what ran. Throws on double-dispatch
+    /// or an illegal starting state; failures after the card leaves `queued`
     /// (unknown dispatcher, malformed params, dispatcher errors) are
     /// recorded on the card instead of thrown.
-    func dispatch(cardID: UUID) async throws {
+    func dispatch(cardID: UUID, as dispatcherID: String? = nil) async throws {
         guard handles[cardID] == nil else {
             throw QueueError.alreadyDispatching(cardID)
         }
-        guard let card = try await store.fetch(id: cardID) else {
-            throw PersistenceError.notFound(cardID)
-        }
         // Validated queued → dispatched; also rejects re-dispatch of a
         // finished or already-dispatched card.
-        try await store.setStatus(id: cardID, to: .dispatched)
+        let card = try await store.beginDispatch(id: cardID, dispatcherID: dispatcherID)
 
         guard handles[cardID] == nil else {
             // A concurrent dispatch call won the race while we awaited.

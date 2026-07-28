@@ -4,7 +4,9 @@ import os
 /// v1's one dispatcher: runs `claude -p <prompt>` headlessly in a user-chosen
 /// working directory, streaming stream-json events into the card's log.
 struct ClaudeCodeDispatcher: Dispatcher {
-    let id = "claude-code"
+    static let dispatcherID = "claude-code"
+
+    let id = ClaudeCodeDispatcher.dispatcherID
     let displayName = "Claude Code"
 
     /// Verified against CLI 2.1.200 (`--permission-mode` rejects anything else).
@@ -19,15 +21,19 @@ struct ClaudeCodeDispatcher: Dispatcher {
             DispatcherParamSpec(
                 id: "permissionMode", label: "Permission Mode",
                 kind: .choice(options: Self.permissionModes), required: false,
-                defaultValue: Self.defaultPermissionMode),
+                defaultValue: Self.defaultPermissionMode, placement: .advanced),
             DispatcherParamSpec(
                 id: "maxTurns", label: "Max Turns",
                 kind: .integer(range: Self.maxTurnsRange), required: false,
-                defaultValue: String(Self.defaultMaxTurns)),
-            // Visible (not hidden state) so a follow-up card's resume target
-            // can be seen and cleared in the generic param UI.
-            DispatcherParamSpec(id: "resumeSessionID", label: "Resume Session ID", kind: .string, required: false),
-            DispatcherParamSpec(id: "extraFlags", label: "Extra CLI Flags", kind: .string, required: false),
+                defaultValue: String(Self.defaultMaxTurns), placement: .advanced),
+            // Hidden from the param form; the card UI shows it as the
+            // resume-session chip (visible + clearable) on follow-up cards.
+            DispatcherParamSpec(
+                id: "resumeSessionID", label: "Resume Session ID", kind: .string,
+                required: false, placement: .hidden),
+            DispatcherParamSpec(
+                id: "extraFlags", label: "Extra CLI Flags", kind: .string,
+                required: false, placement: .advanced),
         ]
     }
 

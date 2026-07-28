@@ -82,13 +82,6 @@ final class QueueModel {
         try await store.updateEditable(id: id, paramsJSON: try QueueParams.encode(params))
     }
 
-    /// Params are left as-is on a switch: shared keys (working directory,
-    /// resume session) carry over, keys the new dispatcher doesn't spec sit
-    /// inert in the JSON and survive switching back.
-    func updateDispatcher(id: UUID, to dispatcherID: String) async throws {
-        try await store.updateEditable(id: id, dispatcherID: dispatcherID)
-    }
-
     func delete(id: UUID) async throws {
         try await store.delete(id: id)
     }

@@ -58,8 +58,14 @@ final class AudioCapture {
             }
         }
 
+        // With zero input devices the engine still fabricates a plausible
+        // outputFormat (2 ch / 44.1 kHz); only inputFormat reports the truth
+        // (0 Hz / 0 ch). Installing a tap in that state raises an uncatchable
+        // NSException, so gate on the hardware-side format first.
+        let hardwareFormat = input.inputFormat(forBus: 0)
         let format = input.outputFormat(forBus: 0)
-        guard format.sampleRate > 0, format.channelCount > 0 else {
+        guard hardwareFormat.sampleRate > 0, hardwareFormat.channelCount > 0,
+              format.sampleRate > 0, format.channelCount > 0 else {
             throw AudioCaptureError.noInputAvailable
         }
 
@@ -145,8 +151,12 @@ final class AudioCapture {
         let input = engine.inputNode
         input.removeTap(onBus: 0)
 
+        // Same trap as start(): outputFormat lies when the input device is
+        // gone — only inputFormat reports 0 Hz / 0 ch truthfully.
+        let hardwareFormat = input.inputFormat(forBus: 0)
         let format = input.outputFormat(forBus: 0)
-        guard format.sampleRate > 0, format.channelCount > 0 else {
+        guard hardwareFormat.sampleRate > 0, hardwareFormat.channelCount > 0,
+              format.sampleRate > 0, format.channelCount > 0 else {
             voxiLog.warning("capture: input device lost; capture will finish with audio so far")
             return
         }

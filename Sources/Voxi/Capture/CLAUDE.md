@@ -22,5 +22,6 @@ Owns the `AVAudioEngine` input tap and everything between the hardware and a cle
 
 - **The tap closure MUST be `@Sendable`** (`AudioCapture.start` and `handleConfigChange`). Without it the closure inherits `@MainActor` from the class and **traps at runtime** on AVFAudio's realtime messenger queue — this crashed the app on its first real capture (2026-07-11). The compiler will not warn you.
 - `AVAudioPCMBuffer` is non-Sendable — it never crosses isolation; only the session ingests it.
+- **`inputNode.outputFormat(forBus: 0)` lies when the machine has zero input devices** (fabricates 2 ch / 44.1 kHz); only `inputFormat(forBus: 0)` truthfully reports 0 Hz / 0 ch. Installing a tap in that state raises an **uncatchable NSException** and kills the process — this crashed onboarding on a mic-less Mac mini (2026-07-28). Always gate tap installs on the hardware-side `inputFormat` (`start` and `handleConfigChange` both do).
 - This module **cannot be unit-tested headlessly** (needs mic + TCC). Pure parts (`AudioLevelMath`, `StreamResampler`, `SignalGuard`) are tested; `AudioCapture` itself gets listed manual verification (live dictation, device unplug mid-capture).
 - Levels are display-calibrated: the onboarding mic-test pass gate (`MicTestGate`) is tuned against `SignalGuard.peakThreshold` on **raw** levels — don't insert gain ahead of it.

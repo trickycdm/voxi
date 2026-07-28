@@ -57,6 +57,7 @@ struct CardDetailView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             promptSection
+            dispatcherSection
             if !paramSpecs.isEmpty {
                 paramsSection
             }
@@ -108,6 +109,41 @@ struct CardDetailView: View {
                     let text = promptDraft
                     Task { await save { try await model.updatePrompt(id: card.id, to: text) } }
                 }
+        }
+    }
+
+    // MARK: Dispatcher
+
+    /// Rendered even when locked so terminal cards show what ran them. No
+    /// local @State: the binding reads through to `card.dispatcherID`, so the
+    /// GRDB observation echo updates the selection and the rendered param
+    /// specs in one pass, like every other field in this view.
+    private var dispatcherSection: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Dispatcher")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Picker("Dispatcher", selection: Binding(
+                get: { card.dispatcherID },
+                set: { newID in
+                    guard isEditable, newID != card.dispatcherID else { return }
+                    Task { await save { try await model.updateDispatcher(id: card.id, to: newID) } }
+                }
+            )) {
+                ForEach(resolver.allDispatchers, id: \.id) { dispatcher in
+                    Text(dispatcher.displayName).tag(dispatcher.id)
+                }
+                if dispatcher == nil {
+                    // A card carrying an unregistered id stays visible (and
+                    // undispatchable) rather than silently snapping to a
+                    // registered one.
+                    Text(card.dispatcherID).tag(card.dispatcherID)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .fixedSize()
+            .disabled(!isEditable)
         }
     }
 
@@ -262,12 +298,45 @@ struct CardDetailView: View {
                     Task { await save { try await model.followUp(from: card) } }
                 }
                 .help("New card that resumes this run's session")
+                Button("Open in iTerm") {
+                    openResumeInTerminal()
+                }
+                .help("Resume this run's session interactively (Terminal if iTerm isn't installed)")
+                .disabled(resumeWorkingDirectory == nil)
             }
             Spacer()
             if card.status != .dispatched && card.status != .running {
                 Button("Delete", role: .destructive) {
                     Task { await save { try await model.delete(id: card.id) } }
                 }
+            }
+        }
+    }
+
+    /// The card's working directory, when usable for an interactive resume.
+    private var resumeWorkingDirectory: String? {
+        let dir = (params[QueueParams.workingDirectoryKey] ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return dir.isEmpty ? nil : dir
+    }
+
+    /// Fire-and-forget UI convenience, not card lifecycle — the queue's
+    /// record of the run is untouched; errors land in `lastError`.
+    private func openResumeInTerminal() {
+        guard let sessionID = card.sessionID, let dir = resumeWorkingDirectory else { return }
+        Task {
+            // locate() shells out to `claude --version`; keep it off the main thread.
+            guard let binary = await Task.detached(operation: { ClaudeBinaryLocator().locate() }).value else {
+                lastError = "claude CLI (\(ClaudeBinaryLocator.requiredMajorVersion).x or newer) not found"
+                return
+            }
+            let command = TerminalLauncher.resumeCommand(
+                claudePath: binary.path, workingDirectory: dir, sessionID: sessionID)
+            do {
+                try TerminalLauncher.launch(command: command)
+                lastError = nil
+            } catch {
+                lastError = error.localizedDescription
             }
         }
     }

@@ -61,7 +61,7 @@ targets:
         LSMinimumSystemVersion: "14.0"
         LSApplicationCategoryType: public.app-category.productivity
         NSMicrophoneUsageDescription: Voxi needs the microphone to transcribe your dictation.
-        NSAppleEventsUsageDescription: Voxi uses Apple Events to insert dictated text into other applications.
+        NSAppleEventsUsageDescription: Voxi uses Apple Events to insert dictated text into other applications and to open Claude Code sessions in your terminal.
         NSPrincipalClass: NSApplication
         # Sparkle: feed lives in this repo (public), enclosures on GitHub
         # release assets. Private EdDSA key is in Colin's login Keychain.

@@ -54,6 +54,7 @@ private struct FakeDispatcher: Dispatcher {
 private struct FakeResolver: DispatcherResolving {
     var dispatchers: [String: any Dispatcher] = [:]
     func dispatcher(for id: String) -> (any Dispatcher)? { dispatchers[id] }
+    var allDispatchers: [any Dispatcher] { Array(dispatchers.values) }
 }
 
 // MARK: - Harness

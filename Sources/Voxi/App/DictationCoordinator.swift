@@ -185,7 +185,7 @@ final class DictationCoordinator {
                     prompt: outcome.draft.prompt,
                     rawTranscript: trimmed,
                     refinedByLLM: outcome.draft.refinedByLLM,
-                    dispatcherID: "claude-code",
+                    dispatcherID: DispatcherRegistry.defaultDispatcherID,
                     paramsJSON: Self.defaultCardParams()
                 )
                 try await cardStore.insert(card)

@@ -84,6 +84,34 @@ private func makeModel() throws -> (QueueModel, CardStore) {
         #expect(stored.prompt == makeDraft().prompt)
     }
 
+    @Test func dispatcherSwitchPersistsAndLeavesParamsUntouched() async throws {
+        let (model, store) = try makeModel()
+        let card = try await model.addCard(
+            draft: makeDraft(), rawTranscript: "r", dispatcherID: "claude-code-iterm",
+            params: ["workingDirectory": "/repos", "maxTurns": "50"])
+
+        try await model.updateDispatcher(id: card.id, to: "claude-code")
+
+        let stored = try #require(try await store.fetch(id: card.id))
+        #expect(stored.dispatcherID == "claude-code")
+        // Keys the new dispatcher doesn't spec stay inert in the JSON.
+        #expect(try QueueParams.decode(stored.paramsJSON) == [
+            "workingDirectory": "/repos", "maxTurns": "50",
+        ])
+    }
+
+    @Test func dispatcherSwitchRejectedOnceDispatched() async throws {
+        let (model, store) = try makeModel()
+        let card = try await model.addCard(draft: makeDraft(), rawTranscript: "r", dispatcherID: "claude-code")
+        try await store.setStatus(id: card.id, to: .dispatched)
+
+        await #expect(throws: QueueError.cardNotEditable(.dispatched)) {
+            try await model.updateDispatcher(id: card.id, to: "claude-code-iterm")
+        }
+        let stored = try #require(try await store.fetch(id: card.id))
+        #expect(stored.dispatcherID == "claude-code")
+    }
+
     @Test func editUnknownCardThrowsNotFound() async throws {
         let (model, _) = try makeModel()
         let ghost = UUID()

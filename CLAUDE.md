@@ -19,7 +19,7 @@ Sources/Voxi/
   Pill/           — floating non-activating status panel; pure PillTimingPolicy
   DesignSystem/   — "Racing Green & Cream" tokens: Theme.swift (colors/radii/spacing), brand views
   CommandQueue/   — ActionCard lifecycle, QueueRunner, queue UI
-  Dispatchers/    — Dispatcher protocol + registry; claude-code executor, stream-json parsing
+  Dispatchers/    — Dispatcher protocol + registry; iTerm hand-off (default) + headless claude executors
   Persistence/    — GRDB: history (+FTS5), dictionary, actionCard; append-only migrations
   Hub/            — settings/history/dictionary window
   Onboarding/     — first-run walkthrough: permissions + feature opt-ins (pure OnboardingModel)
@@ -50,7 +50,7 @@ Data flow, module table, decision log: [`docs/architecture.md`](docs/architectur
 Requires Xcode 26+, XcodeGen (`brew install xcodegen`), macOS 14+.
 
 ```sh
-xcodegen generate                                                       # after any project.yml change
+xcodegen generate                                                       # after any project.yml change OR added/removed source file (sources are globbed at generate time; until then IDE/SourceKit errors on new files are noise — xcodebuild is the gate)
 xcodebuild -project Voxi.xcodeproj -scheme Voxi -configuration Debug -derivedDataPath build -skipMacroValidation build
 xcodebuild -project Voxi.xcodeproj -scheme Voxi -configuration Debug -derivedDataPath build -skipMacroValidation test
 ./Scripts/make-test-audio.sh                                            # spoken WAV fixtures (needed before ASR tests)

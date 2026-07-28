@@ -25,7 +25,8 @@
 
 - **TCC grants key off the signing identity + bundle id.** Signing is per-config in `project.yml` (both team `F7H963S3B4`, **never** ad-hoc `-`): Debug = "Apple Development" — daily grants key off this identity and survive rebuilds; Release = "Developer ID Application" + hardened runtime for distribution (`Scripts/release.sh`). Never change the Debug identity or `com.colin.voxi` casually.
 - **The two identities share one bundle id**, so running a Release build on the dev machine presents a different identity to TCC — expect Accessibility/Microphone/Automation re-prompts, and switching between Debug and Release builds can flap grants.
-- Grants gone stale anyway? `tccutil reset Accessibility com.colin.voxi` (same for `Microphone`), then re-grant via onboarding's live re-checks.
+- Grants gone stale anyway? `tccutil reset Accessibility com.colin.voxi` (same for `Microphone`, `AppleEvents`), then re-grant via onboarding's live re-checks.
+- **Automation (Apple Events) grants are per target app**: System Events (AppleScript insertion tier) and iTerm2/Terminal (the iTerm hand-off dispatcher + resume button, `TerminalLauncher`) each prompt separately on first use. Denial surfaces as AppleScript error **-1743** — both call sites map it to a message naming the target app and the Settings pane.
 - **`kAXTrustedCheckOptionPrompt` is a mutable ObjC global and not concurrency-safe** — the hardcoded literal string is used instead (`HotkeyController`). Leave it that way.
 
 ## Distribution / notarisation
@@ -49,7 +50,7 @@ The release pipeline is `Scripts/release.sh X.Y.Z`; the runbook is `docs/RELEASI
 
 All established in `ClaudeCodeDispatcher.swift` — copy its shape:
 
-- **Spawn directly with an argument array** (`Process.arguments`) — never through a shell; no quoting/injection surface.
+- **Spawn directly with an argument array** (`Process.arguments`) — never through a shell; no quoting/injection surface. (This rule is about `Process`. `TerminalLauncher` handing a command line to iTerm/Terminal is the deliberate exception — a terminal's shell parsing input is the product; everything variable is `shellQuoted` and the prompt travels by temp file, never on the command line.)
 - **`standardInput = FileHandle.nullDevice`** or the child may stall ~3 s probing stdin.
 - **Set `PATH` explicitly** — the app's launch context (Finder/launchd) does not have the user's shell PATH.
 - **Completion = stdout EOF ∧ stderr EOF ∧ process exit,** guarded to resume exactly once. Resuming on exit alone loses late-buffered output.

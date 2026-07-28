@@ -529,12 +529,19 @@ private func parse(_ line: String) -> [ClaudeEvent] {
 // MARK: - Registry
 
 @Suite struct DispatcherRegistryTests {
-    @Test func v1RegistersExactlyClaudeCode() {
+    @Test func v1RegistersITermFirstThenHeadless() {
         let registry = DispatcherRegistry.v1()
-        #expect(registry.all.count == 1)
-        #expect(registry.dispatcher(id: "claude-code") != nil)
+        // Registration order is the picker order; the default tops it.
+        #expect(registry.all.map(\.id) == ["claude-code-iterm", "claude-code"])
         #expect(registry.dispatcher(id: "claude-code")?.displayName == "Claude Code")
+        #expect(registry.dispatcher(id: "claude-code-iterm")?.displayName == "Claude Code (iTerm)")
         #expect(registry.dispatcher(id: "shell") == nil)
+    }
+
+    @Test func defaultDispatcherResolves() {
+        let registry = DispatcherRegistry.v1()
+        #expect(registry.dispatcher(id: DispatcherRegistry.defaultDispatcherID) != nil)
+        #expect(DispatcherRegistry.defaultDispatcherID == "claude-code-iterm")
     }
 }
 
@@ -602,5 +609,168 @@ private func parse(_ line: String) -> [ClaudeEvent] {
                 _ = try ClaudeCodeDispatcher.arguments(prompt: "P", params: ["maxTurns": bad])
             }
         }
+    }
+}
+
+// MARK: - Terminal launcher (iTerm hand-off)
+
+@Suite struct ITermDispatcherParamTests {
+    @Test func declaresTheTwoParams() {
+        let specs = ClaudeCodeITermDispatcher().paramSpecs
+        #expect(specs.map(\.id) == ["workingDirectory", "resumeSessionID"])
+        #expect(specs[0].required)
+        if case .directory = specs[0].kind {} else { Issue.record("workingDirectory should be a directory param") }
+        #expect(!specs[1].required)
+        if case .string = specs[1].kind {} else { Issue.record("resumeSessionID should be a string param") }
+    }
+
+    @Test func rejectsMissingWorkingDirectory() async {
+        await #expect(throws: DispatcherError.self) {
+            _ = try await ClaudeCodeITermDispatcher().execute(prompt: "x", params: [:], onEvent: { _ in })
+        }
+    }
+
+    @Test func rejectsNonexistentWorkingDirectory() async {
+        await #expect(throws: DispatcherError.self) {
+            _ = try await ClaudeCodeITermDispatcher().execute(
+                prompt: "x",
+                params: ["workingDirectory": "/nonexistent/voxi-test-\(UUID().uuidString)"],
+                onEvent: { _ in })
+        }
+    }
+
+    @Test func throwsWhenNoClaudeBinaryFound() async throws {
+        let suite = "voxi-test-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let locator = ClaudeBinaryLocator(
+            defaults: defaults, probePaths: [],
+            versionOutput: { _ in nil }, loginShellLookup: { nil }, fileExists: { _ in false })
+        await #expect(throws: DispatcherError.self) {
+            _ = try await ClaudeCodeITermDispatcher(locator: locator).execute(
+                prompt: "x",
+                params: ["workingDirectory": FileManager.default.temporaryDirectory.path],
+                onEvent: { _ in })
+        }
+    }
+}
+
+@Suite struct TerminalLauncherEscapingTests {
+    @Test func shellQuotesPlainAndSpacedText() {
+        #expect(TerminalLauncher.shellQuoted("/usr/bin/claude") == "'/usr/bin/claude'")
+        #expect(TerminalLauncher.shellQuoted("/Users/c/My Repos") == "'/Users/c/My Repos'")
+        #expect(TerminalLauncher.shellQuoted("") == "''")
+    }
+
+    @Test func shellQuotesEmbeddedSingleQuotes() {
+        #expect(TerminalLauncher.shellQuoted("it's") == #"'it'\''s'"#)
+    }
+
+    @Test func escapesBackslashesBeforeQuotes() {
+        // Reversing the replacement order would corrupt this exact case.
+        #expect(TerminalLauncher.escapedForAppleScript(#"a\"b"#) == #"a\\\"b"#)
+        #expect(TerminalLauncher.escapedForAppleScript(#"say "hi""#) == #"say \"hi\""#)
+        #expect(TerminalLauncher.escapedForAppleScript(#"back\slash"#) == #"back\\slash"#)
+        #expect(TerminalLauncher.escapedForAppleScript("plain") == "plain")
+    }
+}
+
+@Suite struct TerminalLauncherCommandTests {
+    @Test func launchCommandMatchesBaseline() {
+        let command = TerminalLauncher.launchCommand(
+            claudePath: "/opt/homebrew/bin/claude",
+            workingDirectory: "/Users/x/proj",
+            promptFilePath: "/tmp/p.txt")
+        #expect(command ==
+            "cd '/Users/x/proj' && '/opt/homebrew/bin/claude' \"$(cat '/tmp/p.txt')\"; rm -f '/tmp/p.txt'")
+    }
+
+    @Test func launchCommandWithResumeInsertsFlagBeforePrompt() {
+        let command = TerminalLauncher.launchCommand(
+            claudePath: "/opt/homebrew/bin/claude",
+            workingDirectory: "/Users/x/proj",
+            promptFilePath: "/tmp/p.txt",
+            resumeSessionID: "sess-123")
+        #expect(command ==
+            "cd '/Users/x/proj' && '/opt/homebrew/bin/claude' --resume 'sess-123' \"$(cat '/tmp/p.txt')\"; rm -f '/tmp/p.txt'")
+    }
+
+    @Test func resumeCommandMatchesBaseline() {
+        let command = TerminalLauncher.resumeCommand(
+            claudePath: "/usr/local/bin/claude",
+            workingDirectory: "/Users/x/proj",
+            sessionID: "sess-123")
+        #expect(command == "cd '/Users/x/proj' && '/usr/local/bin/claude' --resume 'sess-123'")
+    }
+
+    @Test func apostropheDirectoryQuotedEndToEnd() {
+        let command = TerminalLauncher.resumeCommand(
+            claudePath: "/usr/local/bin/claude",
+            workingDirectory: "/Users/c/O'Brien's repo",
+            sessionID: "s")
+        #expect(command == #"cd '/Users/c/O'\''Brien'\''s repo' && '/usr/local/bin/claude' --resume 's'"#)
+    }
+}
+
+@Suite struct TerminalLauncherScriptTests {
+    @Test func iTermScriptCreatesWindowAndWritesCommand() {
+        let script = TerminalLauncher.script(for: .iTerm, command: "cd '/tmp' && claude")
+        #expect(script.contains(#"tell application id "com.googlecode.iterm2""#))
+        #expect(script.contains("create window with default profile"))
+        #expect(script.contains(#"write text "cd '/tmp' && claude""#))
+    }
+
+    @Test func terminalScriptUsesDoScript() {
+        let script = TerminalLauncher.script(for: .terminal, command: "cd '/tmp' && claude")
+        #expect(script.contains(#"tell application id "com.apple.Terminal""#))
+        #expect(script.contains(#"do script "cd '/tmp' && claude""#))
+        #expect(!script.contains("create window"))
+    }
+
+    @Test func commandQuotesAreEscapedInsideScript() {
+        let script = TerminalLauncher.script(for: .terminal, command: #"echo "$(cat 'f')""#)
+        #expect(script.contains(#"do script "echo \"$(cat 'f')\"""#))
+    }
+}
+
+@Suite struct ITermPromptFileTests {
+    private func scratchDir() -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("voxi-prompt-test-\(UUID().uuidString)", isDirectory: true)
+    }
+
+    @Test func promptRoundTripsThroughFile() throws {
+        let dir = scratchDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let prompt = "Fix the \"bug\" in `main()`.\n\nIt costs $5 and it's urgent."
+        let file = try ClaudeCodeITermDispatcher.writePromptFile(prompt, in: dir)
+        #expect(try String(contentsOf: file, encoding: .utf8) == prompt)
+    }
+
+    @Test func distinctFilesPerWrite() throws {
+        let dir = scratchDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let a = try ClaudeCodeITermDispatcher.writePromptFile("a", in: dir)
+        let b = try ClaudeCodeITermDispatcher.writePromptFile("b", in: dir)
+        #expect(a != b)
+    }
+
+    @Test func sweepRemovesStaleKeepsFresh() throws {
+        let dir = scratchDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let stale = try ClaudeCodeITermDispatcher.writePromptFile("old", in: dir)
+        let fresh = try ClaudeCodeITermDispatcher.writePromptFile("new", in: dir)
+
+        let now = Date()
+        try FileManager.default.setAttributes(
+            [.modificationDate: now.addingTimeInterval(-90_000)], ofItemAtPath: stale.path)
+        ClaudeCodeITermDispatcher.sweepStalePromptFiles(in: dir, olderThan: 86_400, now: now)
+
+        #expect(!FileManager.default.fileExists(atPath: stale.path))
+        #expect(FileManager.default.fileExists(atPath: fresh.path))
+    }
+
+    @Test func sweepOfMissingDirectoryIsANoOp() {
+        ClaudeCodeITermDispatcher.sweepStalePromptFiles(in: scratchDir())
     }
 }

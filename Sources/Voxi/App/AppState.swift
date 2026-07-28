@@ -253,4 +253,5 @@ private struct RegistryResolver: DispatcherResolving {
     func dispatcher(for id: String) -> (any Dispatcher)? {
         registry.dispatcher(id: id)
     }
+    var allDispatchers: [any Dispatcher] { registry.all }
 }

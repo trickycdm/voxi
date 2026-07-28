@@ -13,7 +13,8 @@ extension CardStore {
         title: String? = nil,
         summary: String? = nil,
         prompt: String? = nil,
-        paramsJSON: String? = nil
+        paramsJSON: String? = nil,
+        dispatcherID: String? = nil
     ) async throws {
         try await database.dbQueue.write { db in
             guard var card = try ActionCard.fetchOne(db, key: id.uuidString.lowercased()) else {
@@ -26,6 +27,7 @@ extension CardStore {
             if let summary { card.summary = summary }
             if let prompt { card.prompt = prompt }
             if let paramsJSON { card.paramsJSON = paramsJSON }
+            if let dispatcherID { card.dispatcherID = dispatcherID }
             try card.update(db)
         }
     }

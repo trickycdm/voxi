@@ -24,7 +24,8 @@
 
 ## Gotchas
 
-- Cards are editable **only** while `.queued` — prompt/params lock at dispatch.
+- Cards are editable **only** while `.queued` — prompt/params/dispatcher lock at dispatch. The dispatcher picker (CardDetailView) writes through `QueueModel.updateDispatcher` → `updateEditable`; the store is registry-agnostic (free-form id — unknown ids fail at dispatch via `failBeforeRun`, never at edit), and params are not migrated on a switch (shared keys carry over, unspecced keys sit inert in the JSON).
+- The "Open in iTerm" button (terminal cards with a `sessionID`) is a fire-and-forget view action calling `TerminalLauncher` directly — not a card lifecycle transition; the queue's record of the run is untouched.
 - Retry re-queues the same prompt and clears prior run bookkeeping; it is a fresh run, not a resume.
 - Different cards run concurrently by design; only same-card double-dispatch is guarded.
 - One reusable queue window for the app lifetime (`QueueWindowController`) — shown/hidden, never recreated; the queue UI lives in an `NSHostingView`, so `@Environment(\.openWindow)` is unavailable inside it.

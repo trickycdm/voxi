@@ -27,7 +27,7 @@
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSAppleEventsUsageDescription</key>
-	<string>Voxi uses Apple Events to insert dictated text into other applications.</string>
+	<string>Voxi uses Apple Events to insert dictated text into other applications and to open Claude Code sessions in your terminal.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Voxi needs the microphone to transcribe your dictation.</string>
 	<key>NSPrincipalClass</key>

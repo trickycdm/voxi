@@ -59,8 +59,8 @@ enum DispatcherError: Error, LocalizedError {
     }
 }
 
-/// A pluggable executor for action cards. v1 ships exactly one implementation
-/// (Claude Code headless); new executors implement this and register — nothing else.
+/// A pluggable executor for action cards. New executors implement this and
+/// register in `DispatcherRegistry` — nothing else.
 protocol Dispatcher: Sendable {
     var id: String { get }
     var displayName: String { get }

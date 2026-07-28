@@ -16,8 +16,12 @@ struct DispatcherRegistry: Sendable {
         byID[id]
     }
 
-    /// v1 ships exactly one dispatcher: Claude Code headless.
+    /// What new cards are created with; the picker lets the user switch a
+    /// queued card to any registered dispatcher.
+    static let defaultDispatcherID = ClaudeCodeITermDispatcher.dispatcherID
+
+    /// Interactive hand-off first (the default tops the picker), headless second.
     static func v1() -> DispatcherRegistry {
-        DispatcherRegistry([ClaudeCodeDispatcher()])
+        DispatcherRegistry([ClaudeCodeITermDispatcher(), ClaudeCodeDispatcher()])
     }
 }

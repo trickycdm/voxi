@@ -5,6 +5,8 @@ import Observation
 /// adapted to this at integration time; tests inject fakes.
 protocol DispatcherResolving: Sendable {
     func dispatcher(for id: String) -> (any Dispatcher)?
+    /// Registration order, for the card's dispatcher picker.
+    var allDispatchers: [any Dispatcher] { get }
 }
 
 /// Live, in-memory view of a dispatch in progress — updated on every event

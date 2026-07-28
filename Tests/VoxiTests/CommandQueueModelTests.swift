@@ -113,6 +113,19 @@ private func makeModel() throws -> (QueueModel, CardStore) {
         #expect(try await store.fetch(id: card.id) == nil)
     }
 
+    @Test func clearFinishedRemovesOnlyTerminalCards() async throws {
+        let (model, store) = try makeModel()
+        let kept = try await model.addCard(draft: makeDraft(title: "kept"), rawTranscript: "r", dispatcherID: "d")
+        let done = try await model.addCard(draft: makeDraft(title: "done"), rawTranscript: "r", dispatcherID: "d")
+        try await store.setStatus(id: done.id, to: .dispatched)
+        try await store.setStatus(id: done.id, to: .running)
+        try await store.setResult(id: done.id, exitCode: 0)
+
+        try await model.clearFinished()
+        try await model.load()
+        #expect(model.cards.map(\.id) == [kept.id])
+    }
+
     @Test func retryResetsFailedCardToQueued() async throws {
         let (model, store) = try makeModel()
         let card = try await model.addCard(draft: makeDraft(), rawTranscript: "r", dispatcherID: "d")

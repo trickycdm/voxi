@@ -6,7 +6,7 @@ import SwiftUI
 /// SwiftUI-level mirror of the pill's `NSAppearance(.darkAqua)` pin). Must
 /// stay pure SwiftUI: AppKit-hosted controls would not follow the pin.
 struct HubRailView: View {
-    @Binding var selection: HubView.HubSection
+    @Binding var selection: HubSection
     @Environment(AppState.self) private var appState
     // Injected by the shell (VoxiApp): NSApp.delegate is SwiftUI's adaptor
     // wrapper, so reaching the updater by casting it fails silently.
@@ -19,7 +19,7 @@ struct HubRailView: View {
                 // Clears the traffic lights overlaid by the hidden titlebar.
                 .padding(.top, 40)
                 .padding(.bottom, Theme.Space.xl)
-            ForEach(Array(HubView.HubSection.allCases.enumerated()), id: \.element) { index, section in
+            ForEach(Array(HubSection.allCases.enumerated()), id: \.element) { index, section in
                 RailItem(section: section, index: index, selection: $selection)
             }
             Spacer()
@@ -129,9 +129,9 @@ struct HubRailView: View {
 /// One rail navigation entry. Selection is butter on the baked-alpha butter
 /// fill; hover is a faint ink lift. ⌘1/2/3 mirror the Finder/Mail convention.
 private struct RailItem: View {
-    let section: HubView.HubSection
+    let section: HubSection
     let index: Int
-    @Binding var selection: HubView.HubSection
+    @Binding var selection: HubSection
     @State private var hovering = false
 
     private var isSelected: Bool { selection == section }

@@ -14,18 +14,10 @@ struct VoxiApp: App {
             MenuBarContent(showOnboarding: { appDelegate.showOnboarding() })
                 .environment(appDelegate.appState)
         }
-
-        // Title stays "Voxi Hub" for the Window menu and accessibility; the
-        // titlebar itself is hidden so the Pit Wall rail runs full bleed with
-        // the traffic lights overlaid on it.
-        Window("Voxi Hub", id: "hub") {
-            HubView()
-                .environment(appDelegate.appState)
-                .environment(appDelegate.updater)
-        }
-        .windowStyle(.hiddenTitleBar)
-        .windowResizability(.contentSize)
-        .defaultSize(width: 880, height: 560)
+        // The Hub is a controller-owned NSWindow (HubWindowController), not a
+        // SwiftUI Window scene: AppState must be able to open it and deep-link
+        // a section from the menu bar and notification taps, and openWindow
+        // only exists inside a scene's environment.
     }
 }
 
@@ -40,7 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         if CLIMode.runIfRequested() { return }
         NSApp.setActivationPolicy(.accessory)
-        appState.start()
+        appState.start(updater: updater)
         updater.start()
         if OnboardingModel.shouldShow() {
             showOnboarding()
@@ -87,7 +79,6 @@ struct MenuBarContent: View {
     let showOnboarding: () -> Void
 
     @Environment(AppState.self) private var appState
-    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         if appState.hotkeys.permissionStatus != .active {
@@ -107,13 +98,12 @@ struct MenuBarContent: View {
         Divider()
 
         Button("Open Hub") {
-            openWindow(id: "hub")
-            NSApp.activate(ignoringOtherApps: true)
+            appState.openHub()
         }
         .keyboardShortcut("h")
 
         Button("Command Queue") {
-            appState.openQueue()
+            appState.openHub(section: .queue)
         }
         .keyboardShortcut("j")
 

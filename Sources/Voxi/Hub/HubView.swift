@@ -1,55 +1,47 @@
 import SwiftUI
 
-/// Content of the main Hub window: History, Dictionary, and Settings.
-/// The shell wires it as `Window("Voxi Hub", id: "hub") { HubView() }` with
-/// `.environment(appState)`.
+/// Content of the main Hub window: History, Queue, Dictionary, and Settings.
+/// Hosted by HubWindowController in a controller-owned NSWindow; navigation
+/// state lives in HubRouter so AppState can deep-link sections.
 struct HubView: View {
-    enum HubSection: String, CaseIterable, Identifiable {
-        case history
-        case dictionary
-        case settings
-
-        var id: Self { self }
-
-        var title: String {
-            switch self {
-            case .history: "History"
-            case .dictionary: "Dictionary"
-            case .settings: "Settings"
-            }
-        }
-
-        var systemImage: String {
-            switch self {
-            case .history: "clock.arrow.circlepath"
-            case .dictionary: "character.book.closed"
-            case .settings: "gearshape"
-            }
-        }
-    }
+    @Bindable var router: HubRouter
 
     @Environment(AppState.self) private var appState
-    @State private var selection: HubSection = .history
 
     var body: some View {
         HStack(spacing: 0) {
-            HubRailView(selection: $selection)
+            HubRailView(selection: $router.section)
             detail
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color.voxiPaper)
         }
         // Full bleed under the hidden titlebar; the rail owns the top edge.
         .ignoresSafeArea(.container, edges: .top)
-        // Rail 196 + a comfortable single-column reading ledger.
-        .frame(minWidth: 820, minHeight: 480)
+        // Rail 196 + queue master–detail split (window enforces contentMinSize).
+        .frame(minWidth: 880, minHeight: 520)
     }
 
     @ViewBuilder
     private var detail: some View {
-        switch selection {
+        switch router.section {
         case .history:
             if let store = appState.historyStore {
                 HistoryView(store: store)
+            } else {
+                databaseUnavailable
+            }
+        case .queue:
+            if let model = appState.queueModel,
+                let runner = appState.queueRunner,
+                let resolver = appState.dispatcherResolver
+            {
+                QueuePaneView(
+                    model: model,
+                    runner: runner,
+                    resolver: resolver,
+                    openLog: { [weak appState] card in appState?.logWindows?.show(card: card) },
+                    pendingCardID: $router.pendingQueueCardID
+                )
             } else {
                 databaseUnavailable
             }

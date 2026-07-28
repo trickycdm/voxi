@@ -520,6 +520,36 @@ private func makeCard(
         #expect(try await store.fetch(id: card.id) == nil)
     }
 
+    @Test func deleteTerminalRemovesOnlyFinishedCards() async throws {
+        let store = CardStore(database: try AppDatabase(inMemory: true))
+        // One card per status, walked through legal transitions.
+        let queued = makeCard(title: "queued")
+        let dispatched = makeCard(title: "dispatched")
+        let running = makeCard(title: "running")
+        let succeeded = makeCard(title: "succeeded")
+        let failed = makeCard(title: "failed")
+        for card in [queued, dispatched, running, succeeded, failed] {
+            try await store.insert(card)
+        }
+        try await store.setStatus(id: dispatched.id, to: .dispatched)
+        for id in [running.id, succeeded.id, failed.id] {
+            try await store.setStatus(id: id, to: .dispatched)
+            try await store.setStatus(id: id, to: .running)
+        }
+        try await store.setResult(id: succeeded.id, exitCode: 0)
+        try await store.setResult(id: failed.id, exitCode: 1)
+
+        let deleted = try await store.deleteTerminal()
+        #expect(deleted == 2)
+        let survivors = try await store.allNewestFirst().map(\.id)
+        #expect(Set(survivors) == [queued.id, dispatched.id, running.id])
+    }
+
+    @Test func deleteTerminalOnEmptyStoreReturnsZero() async throws {
+        let store = CardStore(database: try AppDatabase(inMemory: true))
+        #expect(try await store.deleteTerminal() == 0)
+    }
+
     @Test func observationEmitsCurrentValue() async throws {
         let store = CardStore(database: try AppDatabase(inMemory: true))
         let card = makeCard()

@@ -4,7 +4,7 @@
 
 ## Purpose & boundary
 
-`ActionCard` + `CardStatus` model the card; `QueueRunner` executes exactly one dispatch per card via a `Dispatcher` and owns live-run state; `QueueModel` is the observable card list (GRDB `ValueObservation`); `QueueView`/`CardDetailView`/`QueueWindowController` are the UI. Pure decisions live in `QueueSupport.swift` (`QueueLogic`, `QueueParams`). The DB is reached only through `CardStore` (Persistence).
+`ActionCard` + `CardStatus` model the card; `QueueRunner` executes exactly one dispatch per card via a `Dispatcher` and owns live-run state; `QueueModel` is the observable card list (GRDB `ValueObservation`); `QueuePaneView` (master–detail split hosted as the Hub's Queue section) + `CardDetailView` are the UI. Pure decisions live in `QueueSupport.swift` (`QueueLogic`, `QueueParams`). The DB is reached only through `CardStore` (Persistence).
 
 ## Public surface
 
@@ -29,6 +29,8 @@
 - The "Open in iTerm" button on terminal cards with a `sessionID` is a fire-and-forget view action calling `TerminalLauncher` directly — not a card lifecycle transition; the queue's record of the run is untouched.
 - Retry re-queues the same prompt and clears prior run bookkeeping; it is a fresh run, not a resume.
 - Different cards run concurrently by design; only same-card double-dispatch is guarded.
-- One reusable queue window for the app lifetime (`QueueWindowController`) — shown/hidden, never recreated; the queue UI lives in an `NSHostingView`, so `@Environment(\.openWindow)` is unavailable inside it.
+- The queue is a pane of the Hub (`QueuePaneView` inside `HubView`), not its own window; the Hub itself is one reusable controller-owned NSWindow per app lifetime (`HubWindowController`) — shown/hidden, never recreated. Deep links (menu bar ⌘J, notification taps) go through `AppState.openHub(section:revealCard:)`. `@Environment(\.openWindow)` is unavailable app-wide (no SwiftUI `Window` scene exists).
+- Dictating a command never opens a window — the card lands with a pill notice + system notification (tap deep-links to the card). Do not reintroduce auto-open; it steals focus mid-work.
+- `CardDetailView` is hosted with `.id(card.id)` in the detail column — its prompt/params drafts seed in `.onAppear`, so losing the identity reset makes edits bleed across selections.
 - `paramsJSON` is a dispatcher-defined `[String: String]` blob — the queue treats it as opaque; interpret keys only in the owning dispatcher.
 - Chip styling is token-driven (`CardStatus.chipBackground/.chipForeground`, unit-tested) per `steering/DESIGN_SYSTEM.md` — don't reintroduce named SwiftUI colors.

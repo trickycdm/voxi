@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import Voxi
 
@@ -31,5 +32,25 @@ struct NotificationContentTests {
             cardTitle: "T", success: true, resultText: long)
         #expect(body.count == QueueNotificationContent.bodyLimit)
         #expect(body.hasSuffix("…"))
+    }
+
+    @Test func queuedTitleAndBody() {
+        let (title, body) = QueueNotificationContent.makeQueued(cardTitle: "Fix the tests")
+        #expect(title == "Queued: Fix the tests")
+        #expect(!body.isEmpty)
+    }
+
+    @Test func identifiersRoundTripToCardID() {
+        let id = UUID()
+        #expect(QueueNotificationContent.cardID(
+            fromIdentifier: QueueNotificationContent.runIdentifier(cardID: id)) == id)
+        #expect(QueueNotificationContent.cardID(
+            fromIdentifier: QueueNotificationContent.queuedIdentifier(cardID: id)) == id)
+    }
+
+    @Test func malformedIdentifiersParseToNil() {
+        #expect(QueueNotificationContent.cardID(fromIdentifier: "voxi.run.not-a-uuid") == nil)
+        #expect(QueueNotificationContent.cardID(fromIdentifier: "other.\(UUID().uuidString)") == nil)
+        #expect(QueueNotificationContent.cardID(fromIdentifier: "") == nil)
     }
 }

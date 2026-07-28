@@ -116,6 +116,18 @@ struct CardStore: Sendable {
         }
     }
 
+    /// Bulk-deletes every card in a terminal status (succeeded/failed).
+    /// In-flight and queued cards are never touched. Returns the count.
+    @discardableResult
+    func deleteTerminal() async throws -> Int {
+        let terminal = CardStatus.allCases.filter(\.isTerminal).map(\.rawValue)
+        return try await database.dbQueue.write { db in
+            try ActionCard
+                .filter(terminal.contains(ActionCard.Columns.status))
+                .deleteAll(db)
+        }
+    }
+
     /// Emits all cards (newest first) now and after every card change.
     func observeAll() -> AsyncValueObservation<[ActionCard]> {
         ValueObservation

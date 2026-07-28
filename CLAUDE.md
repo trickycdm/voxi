@@ -18,10 +18,10 @@ Sources/Voxi/
   Insertion/      — 3-tier text insertion (AX → pasteboard → AppleScript opt-in)
   Pill/           — floating non-activating status panel; pure PillTimingPolicy
   DesignSystem/   — "Racing Green & Cream" tokens: Theme.swift (colors/radii/spacing), brand views
-  CommandQueue/   — ActionCard lifecycle, QueueRunner, queue UI
+  CommandQueue/   — ActionCard lifecycle, QueueRunner, queue pane UI (hosted in Hub)
   Dispatchers/    — Dispatcher protocol + registry; iTerm hand-off (default) + headless claude executors
   Persistence/    — GRDB: history (+FTS5), dictionary, actionCard; append-only migrations
-  Hub/            — settings/history/dictionary window
+  Hub/            — settings/history/dictionary/queue window (HubWindowController)
   Onboarding/     — first-run walkthrough: permissions + feature opt-ins (pure OnboardingModel)
 Tests/VoxiTests/  — Swift Testing, in-process against the app binary
 plans/            — plan.md + worklog.md per piece of work; steering/ = rules; docs/ = reference
@@ -38,7 +38,7 @@ Data flow, module table, decision log: [`docs/architecture.md`](docs/architectur
 - **Card status moves only through `CardStatus.canTransition`,** via `CardStore` helpers. Interrupted runs are reconciled to `failed` on launch.
 - **Migrations are append-only** — never edit a registered migration; new columns nullable/defaulted (`steering/PERSISTENCE.md`).
 - **Edit `project.yml`, never the `.xcodeproj`** — it's generated (and gitignored). Run `xcodegen generate` after changing it.
-- **One `CGEventTap`, one pill panel, one queue window per app lifetime** — shown/hidden, never recreated, never `close()`d (`steering/MACOS_PLATFORM.md`).
+- **One `CGEventTap`, one pill panel, one Hub window per app lifetime** — shown/hidden, never recreated, never `close()`d (`steering/MACOS_PLATFORM.md`). The queue is a Hub pane, not a window.
 - **Extension points are protocol + registry line:** new ASR engine, refiner backend, or card executor = one file + one registry entry, nothing else. If a change needs more, the seam is being broken.
 - **Fallbacks never break dictation:** refiner falls back to rules on any error; insertion degrades tier-by-tier. The user's words must land.
 - **Privacy claims are audited, not asserted:** `PRIVACY_AUDIT.md` is the claims register (re-runnable audit prompt + dated results); `Scripts/privacy-preflight.sh` mechanically gates every release (run by release.sh stage 1) against tracked secrets/artifacts and telemetry SDKs.

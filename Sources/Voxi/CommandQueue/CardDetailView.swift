@@ -1,9 +1,10 @@
 import SwiftUI
 
-/// Expanded card, per the Rev A board: prompt well, context chips (folder +
-/// resume-session), two dispatch-time action buttons, advanced disclosure for
-/// the headless-only knobs, live log, result summary, and the raw-transcript
-/// disclosure with its refinement badge.
+/// Card detail, per the Rev A board (now the Queue pane's right-hand column):
+/// prompt well, context chips (folder + resume-session), two dispatch-time
+/// action buttons, advanced disclosure for the headless-only knobs, live log,
+/// result summary, and the raw-transcript disclosure with its refinement
+/// badge. Hosted with `.id(card.id)` so drafts re-seed per selection.
 struct CardDetailView: View {
     let card: ActionCard
     let model: QueueModel
@@ -117,7 +118,7 @@ struct CardDetailView: View {
                 .foregroundStyle(Color.voxiInk)
                 .scrollContentBackground(.hidden)
                 .padding(Theme.Space.sm)
-                .frame(minHeight: 64, maxHeight: 140)
+                .frame(minHeight: 64, maxHeight: 280)
                 .background(Color.voxiInset, in: RoundedRectangle(cornerRadius: Theme.Radius.control))
                 .onChange(of: promptDraft) {
                     guard isEditable, promptDraft != card.prompt else { return }
@@ -500,7 +501,7 @@ struct CardDetailView: View {
                     .frame(height: 1)
                     .id("logEnd")
             }
-            .frame(height: 160)
+            .frame(height: 280)
             // VoxiInset adapts per appearance — the old .black.opacity(0.05)
             // was invisible against dark backgrounds.
             .background(Color.voxiInset, in: RoundedRectangle(cornerRadius: Theme.Radius.control))

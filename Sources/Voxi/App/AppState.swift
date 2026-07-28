@@ -27,7 +27,8 @@ final class AppState {
     private(set) var coordinator: DictationCoordinator?
     private(set) var queueModel: QueueModel?
     private(set) var queueRunner: QueueRunner?
-    private(set) var queueWindow: QueueWindowController?
+    private(set) var dispatcherResolver: (any DispatcherResolving)?
+    private(set) var hubWindow: HubWindowController?
     private(set) var logWindows: LogWindowController?
 
     private var eventTask: Task<Void, Never>?
@@ -38,8 +39,9 @@ final class AppState {
 
     private(set) var lastError: String?
 
-    func start() {
+    func start(updater: UpdaterController) {
         voxiLog.info("Voxi starting")
+        hubWindow = HubWindowController(appState: self, updater: updater)
         do {
             let db = try AppDatabase()
             database = db
@@ -68,11 +70,8 @@ final class AppState {
             let runner = QueueRunner(store: cards, resolver: resolver)
             queueModel = model
             queueRunner = runner
-            let logWindows = LogWindowController(model: model, runner: runner)
-            self.logWindows = logWindows
-            queueWindow = QueueWindowController(
-                model: model, runner: runner, resolver: resolver,
-                openLog: { [logWindows] card in logWindows.show(card: card) })
+            dispatcherResolver = resolver
+            logWindows = LogWindowController(model: model, runner: runner)
             model.startObserving()
 
             wirePill(coordinator: coordinator)
@@ -129,23 +128,30 @@ final class AppState {
         hotkeys.stop()
     }
 
-    /// Show the queue window (menu bar + command-card notice both land here).
-    func openQueue() {
-        queueWindow?.show()
+    /// Show the Hub window, optionally deep-linked to a section and — for the
+    /// queue — a specific card (menu bar + notification taps both land here).
+    func openHub(section: HubSection? = nil, revealCard cardID: UUID? = nil) {
+        hubWindow?.show(section: section, revealCard: cardID)
     }
 
     // MARK: - Queue alerts
 
-    /// A queued card opens the queue for review; a finished run raises a
-    /// pill notice + system notification. Authorization is requested the
-    /// first time a card is queued (contextual), never at launch.
+    /// A queued card raises a pill notice + system notification (no window
+    /// steal); a finished run does the same. Notification taps deep-link to
+    /// the Hub's queue pane. Authorization is requested the first time a card
+    /// is queued (contextual), never at launch.
     private func wireQueueAlerts(coordinator: DictationCoordinator, runner: QueueRunner, cards: CardStore) {
         notifications.activate()
-        notifications.onOpen = { [weak self] in self?.openQueue() }
-        coordinator.onCardQueued = { [weak self] _ in
+        notifications.onOpen = { [weak self] cardID in
+            self?.openHub(section: .queue, revealCard: cardID)
+        }
+        coordinator.onCardQueued = { [weak self] card in
             guard let self else { return }
-            self.notifications.requestAuthorizationIfNeeded()
-            self.openQueue()
+            let id = card.id
+            let title = card.title
+            self.notifications.requestAuthorizationIfNeeded { [weak self] in
+                self?.notifications.postCardQueued(cardID: id, cardTitle: title)
+            }
         }
         runner.onRunFinished = { [weak self] cardID, success, resultText in
             guard let self else { return }

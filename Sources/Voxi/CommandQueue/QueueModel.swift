@@ -86,6 +86,12 @@ final class QueueModel {
         try await store.delete(id: id)
     }
 
+    /// Deletes every succeeded/failed card ("Clear Finished"); queued and
+    /// in-flight cards are untouched. Observation echoes the removal.
+    func clearFinished() async throws {
+        try await store.deleteTerminal()
+    }
+
     /// Re-queues a failed card (validated failed → queued transition; the
     /// store clears the previous run's log, exit code, and timestamps).
     func retry(id: UUID) async throws {
